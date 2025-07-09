@@ -2,7 +2,7 @@ import { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, Info } from 'lucide-react';
 import Logo from '../components/Logo';
 
 const LoginPage = () => {
@@ -30,7 +30,16 @@ const LoginPage = () => {
       // The AuthContext will handle the redirect based on user role
       // We'll let the auth state change trigger the navigation
     } catch (err: any) {
-      setError(err.message || 'Credenciales inválidas. Por favor intente nuevamente.');
+      // Handle specific Supabase auth errors
+      if (err.message?.includes('Invalid login credentials') || err.message?.includes('invalid_credentials')) {
+        setError('Credenciales inválidas. Verifique su email y contraseña. Si no tiene una cuenta, regístrese primero.');
+      } else if (err.message?.includes('Email not confirmed')) {
+        setError('Por favor confirme su email antes de iniciar sesión.');
+      } else if (err.message?.includes('Too many requests')) {
+        setError('Demasiados intentos de inicio de sesión. Por favor espere unos minutos antes de intentar nuevamente.');
+      } else {
+        setError(err.message || 'Error al iniciar sesión. Por favor intente nuevamente.');
+      }
     }
   };
 
@@ -76,6 +85,21 @@ const LoginPage = () => {
               <p>¡Cuenta creada exitosamente! Ahora puede iniciar sesión.</p>
             </div>
           )}
+          
+          {/* Info box for first-time users */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 p-3 rounded-lg flex items-start">
+            <Info className="mr-2 h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium">¿Primera vez en el sistema?</p>
+              <p className="mt-1">
+                Si no tiene una cuenta, debe{' '}
+                <Link to="/register" className="underline hover:no-underline">
+                  registrarse primero
+                </Link>
+                . Si ya se registró, use las mismas credenciales que utilizó durante el registro.
+              </p>
+            </div>
+          </div>
           
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg flex items-start">

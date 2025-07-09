@@ -17,8 +17,13 @@ const Navbar = ({ toggleSidebar }: NavbarProps) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleLogout = () => {
-    logout();
-    navigate('/');
+    logout().then(() => {
+      navigate('/');
+    }).catch((error) => {
+      console.error('Error during logout:', error);
+      // Even if logout fails, navigate to home
+      navigate('/');
+    });
   };
 
   return (

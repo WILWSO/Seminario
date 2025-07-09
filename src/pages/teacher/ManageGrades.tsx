@@ -1,140 +1,154 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { FileText, Search, Filter, Save, X, BookOpen } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { BookOpen, Users, Award, Search, Filter, Save, X, Edit3, Check } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
 
-interface Student {
+interface Course {
   id: string;
   name: string;
-  first_name: string;
-  last_name: string;
-  email: string;
+  credits: number;
 }
 
 interface Assignment {
   id: string;
   title: string;
-  due_date: string;
   max_score: number;
-  course_id: string;
+  due_date: string;
 }
 
-interface Course {
+interface Student {
   id: string;
   name: string;
+  email: string;
+  first_name: string;
+  last_name: string;
 }
 
 interface Grade {
   student_id: string;
   assignment_id: string;
   grade: number;
+  comment?: string;
+}
+
+interface EditingGrade {
+  grade: number;
   comment: string;
 }
 
 const ManageGrades = () => {
   const { user } = useAuth();
-  const location = useLocation();
-  const params = new URLSearchParams(location.search);
-  const courseId = params.get('course');
-  const assignmentId = params.get('assignment');
-
+  const { notifications, addNotification, removeNotification } = useNotifications();
   const [courses, setCourses] = useState<Course[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<string>(courseId || '');
-  const [selectedAssignment, setSelectedAssignment] = useState<string>(assignmentId || '');
+  const [selectedCourse, setSelectedCourse] = useState<string>('');
+  const [selectedAssignment, setSelectedAssignment] = useState<string>('');
+  const [selectedAssignmentData, setSelectedAssignmentData] = useState<Assignment | null>(null);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [editingGrade, setEditingGrade] = useState<{
-    studentId: string;
-    grade: number;
-    comment: string;
-  } | null>(null);
+  const [editingGrade, setEditingGrade] = useState<EditingGrade | null>(null);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+
+  const showSuccess = (title: string, message: string, duration: number = 3000) => {
+    addNotification(title, 'success');
+  };
+
+  const showError = (title: string, message: string, duration: number = 3000) => {
+    addNotification(title, 'error');
+  };
 
   useEffect(() => {
-    if (user?.id) {
+    if (user) {
       fetchCourses();
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     if (selectedCourse) {
-      fetchCourseData();
+      fetchAssignments();
+      fetchStudents();
     }
   }, [selectedCourse]);
 
   useEffect(() => {
-    if (selectedAssignment) {
+    if (selectedAssignment && selectedCourse) {
       fetchGrades();
+      const assignment = assignments.find(a => a.id === selectedAssignment);
+      setSelectedAssignmentData(assignment || null);
     }
-  }, [selectedAssignment]);
+  }, [selectedAssignment, selectedCourse, assignments]);
 
   const fetchCourses = async () => {
     try {
-      setIsLoading(true);
-      
       const { data, error } = await supabase
         .from('courses')
-        .select('id, name')
+        .select('id, name, credits')
         .eq('teacher_id', user?.id)
         .eq('is_active', true)
         .order('name');
 
       if (error) throw error;
       setCourses(data || []);
-      
-      // If courseId was provided in URL, set it as selected
-      if (courseId && data?.some(course => course.id === courseId)) {
-        setSelectedCourse(courseId);
-      }
     } catch (error) {
       console.error('Error fetching courses:', error);
+      showError('Error', 'No se pudieron cargar los cursos');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const fetchCourseData = async () => {
+  const fetchAssignments = async () => {
     try {
-      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('id, title, max_score, due_date')
+        .eq('course_id', selectedCourse)
+        .eq('is_active', true)
+        .order('due_date');
 
-      // Fetch students enrolled in the course
-      const { data: enrollmentsData, error: enrollmentsError } = await supabase
+      if (error) throw error;
+      setAssignments(data || []);
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+      showError('Error', 'No se pudieron cargar las evaluaciones');
+    }
+  };
+
+  const fetchStudents = async () => {
+    try {
+      const { data, error } = await supabase
         .from('enrollments')
         .select(`
           user_id,
-          user:users(id, name, first_name, last_name, email)
+          users!enrollments_user_id_fkey(
+            id,
+            name,
+            email,
+            first_name,
+            last_name
+          )
         `)
         .eq('course_id', selectedCourse)
         .eq('is_active', true);
 
-      if (enrollmentsError) throw enrollmentsError;
+      if (error) throw error;
 
-      const studentsData = (enrollmentsData || []).map(enrollment => enrollment.user).filter(Boolean);
+      const studentsData = data?.map(enrollment => ({
+        id: enrollment.users.id,
+        name: enrollment.users.name || `${enrollment.users.first_name || ''} ${enrollment.users.last_name || ''}`.trim(),
+        email: enrollment.users.email,
+        first_name: enrollment.users.first_name || '',
+        last_name: enrollment.users.last_name || ''
+      })) || [];
+
       setStudents(studentsData);
-
-      // Fetch assignments for the course
-      const { data: assignmentsData, error: assignmentsError } = await supabase
-        .from('assignments')
-        .select('*')
-        .eq('course_id', selectedCourse)
-        .order('due_date', { ascending: false });
-
-      if (assignmentsError) throw assignmentsError;
-      setAssignments(assignmentsData || []);
-
-      // If assignmentId was provided in URL, set it as selected
-      if (assignmentId && assignmentsData?.some(assignment => assignment.id === assignmentId)) {
-        setSelectedAssignment(assignmentId);
-      }
-
     } catch (error) {
-      console.error('Error fetching course data:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching students:', error);
+      showError('Error', 'No se pudieron cargar los estudiantes');
     }
   };
 
@@ -142,18 +156,42 @@ const ManageGrades = () => {
     try {
       const { data, error } = await supabase
         .from('grades')
-        .select('*')
+        .select('student_id, assignment_id, grade, comment')
+        .eq('course_id', selectedCourse)
         .eq('assignment_id', selectedAssignment);
 
       if (error) throw error;
       setGrades(data || []);
     } catch (error) {
       console.error('Error fetching grades:', error);
+      showError('Error', 'No se pudieron cargar las calificaciones');
     }
+  };
+
+  const handleEditGrade = (studentId: string, currentGrade?: Grade) => {
+    setEditingStudentId(studentId);
+    setEditingGrade({
+      grade: currentGrade?.grade || 0,
+      comment: currentGrade?.comment || ''
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStudentId(null);
+    setEditingGrade(null);
   };
 
   const handleSaveGrade = async (studentId: string) => {
     if (!editingGrade || !selectedAssignment) return;
+
+    // Validar que la calificación esté dentro del rango permitido 
+    if (editingGrade.grade < 0 || editingGrade.grade > (selectedAssignmentData?.max_score || 100)) {
+      showError(
+        'Calificación inválida',
+        `La calificación debe estar entre 0 y ${selectedAssignmentData?.max_score || 100}`
+      );
+      return;
+    }
 
     try {
       const gradeData = {
@@ -173,7 +211,7 @@ const ManageGrades = () => {
       if (error) throw error;
 
       // Update local state
-      const existingGradeIndex = grades.findIndex(
+      const existingGradeIndex = grades.findIndex( 
         g => g.student_id === studentId && g.assignment_id === selectedAssignment
       );
 
@@ -198,62 +236,80 @@ const ManageGrades = () => {
         ]);
       }
 
-      setEditingGrade(null);
+      showSuccess(
+        'Calificación guardada',
+        'La calificación se ha guardado correctamente.'
+      );
+
+      handleCancelEdit();
+
     } catch (error) {
       console.error('Error saving grade:', error);
-      alert('Error al guardar la calificación: ' + (error as Error).message);
+      showError(
+        'Error al guardar calificación',
+        'No se pudo guardar la calificación. Por favor, intente nuevamente.'
+      );
     }
   };
 
-  const filteredStudents = students.filter(student => {
-    const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
-    const searchLower = searchTerm.toLowerCase();
-    return fullName.includes(searchLower) || 
-           student.email.toLowerCase().includes(searchLower) ||
-           (student.name && student.name.toLowerCase().includes(searchLower));
-  });
+  const getStudentGrade = (studentId: string) => {
+    return grades.find(g => g.student_id === studentId && g.assignment_id === selectedAssignment);
+  };
 
-  const selectedAssignmentData = assignments.find(a => a.id === selectedAssignment);
+  const filteredStudents = students.filter(student =>
+    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  if (isLoading && courses.length === 0) {
+  const calculateStats = () => {
+    const currentGrades = grades.filter(g => g.assignment_id === selectedAssignment);
+    if (currentGrades.length === 0) return { average: 0, passed: 0, failed: 0 };
+
+    const average = currentGrades.reduce((sum, g) => sum + g.grade, 0) / currentGrades.length;
+    const passed = currentGrades.filter(g => g.grade >= 60).length;
+    const failed = currentGrades.filter(g => g.grade < 60).length;
+
+    return { average: Math.round(average * 100) / 100, passed, failed };
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-[calc(100vh-16rem)] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-sky-500"></div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div>
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-          Administrar calificaciones
+          Gestión de Calificaciones
         </h1>
-        <p className="text-slate-600 dark:text-slate-400">
-          Gestione las calificaciones de sus estudiantes
-        </p>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Course and Assignment Selection */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Curso
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Seleccionar Curso
             </label>
             <select
               value={selectedCourse}
               onChange={(e) => {
                 setSelectedCourse(e.target.value);
                 setSelectedAssignment('');
-                setStudents([]);
-                setAssignments([]);
-                setGrades([]);
               }}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
             >
-              <option value="">Seleccionar curso</option>
-              {courses.map(course => (
+              <option value="">Selecciona un curso</option>
+              {courses.map((course) => (
                 <option key={course.id} value={course.id}>
                   {course.name}
                 </option>
@@ -262,8 +318,8 @@ const ManageGrades = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Evaluación
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Seleccionar Evaluación
             </label>
             <select
               value={selectedAssignment}
@@ -271,193 +327,217 @@ const ManageGrades = () => {
               disabled={!selectedCourse}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white disabled:opacity-50"
             >
-              <option value="">Seleccionar evaluación</option>
-              {assignments.map(assignment => (
+              <option value="">Selecciona una evaluación</option>
+              {assignments.map((assignment) => (
                 <option key={assignment.id} value={assignment.id}>
-                  {assignment.title}
+                  {assignment.title} (Max: {assignment.max_score})
                 </option>
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Buscar estudiante
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Buscar estudiantes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={!selectedCourse}
-                className="w-full px-3 py-2 pl-10 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white disabled:opacity-50"
-              />
-              <Search className="absolute left-3 top-2.5 text-slate-400" size={20} />
-            </div>
-          </div>
         </div>
-
-        {selectedAssignmentData && (
-          <div className="mt-4 p-3 bg-sky-50 dark:bg-sky-900/20 rounded-md">
-            <h3 className="font-medium text-slate-800 dark:text-white">
-              {selectedAssignmentData.title}
-            </h3>
-            <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-              Puntuación máxima: {selectedAssignmentData.max_score} puntos
-              {selectedAssignmentData.due_date && (
-                <span className="ml-4">
-                  Fecha límite: {new Date(selectedAssignmentData.due_date).toLocaleDateString('es-AR')}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Students List */}
-      {selectedCourse && selectedAssignment ? (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-              <thead className="bg-slate-50 dark:bg-slate-750">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Estudiante
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Calificación
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Comentario
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredStudents.map((student) => {
-                  const currentGrade = grades.find(g => g.student_id === student.id);
-                  const isEditing = editingGrade?.studentId === student.id;
+      {selectedCourse && selectedAssignment && (
+        <>
+          {/* Statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+              <div className="flex items-center">
+                <Users className="h-8 w-8 text-sky-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Total Estudiantes
+                  </p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {students.length}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-                  return (
-                    <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-750">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-slate-800 dark:text-white">
-                            {student.name || `${student.first_name} ${student.last_name}`}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+              <div className="flex items-center">
+                <Award className="h-8 w-8 text-green-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Promedio
+                  </p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {calculateStats().average}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+              <div className="flex items-center">
+                <Check className="h-8 w-8 text-green-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Aprobados
+                  </p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {calculateStats().passed}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+              <div className="flex items-center">
+                <X className="h-8 w-8 text-red-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    Reprobados
+                  </p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {calculateStats().failed}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+              <input
+                type="text"
+                placeholder="Buscar estudiante por nombre o email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+              />
+            </div>
+          </div>
+
+          {/* Grades Table */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-white">
+                Calificaciones - {selectedAssignmentData?.title}
+              </h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Puntuación máxima: {selectedAssignmentData?.max_score}
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                <thead className="bg-slate-50 dark:bg-slate-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Estudiante
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Email
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Calificación
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Comentario
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                  {filteredStudents.map((student) => {
+                    const studentGrade = getStudentGrade(student.id);
+                    const isEditing = editingStudentId === student.id;
+
+                    return (
+                      <tr key={student.id}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {student.name}
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-slate-500 dark:text-slate-400">
                             {student.email}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min="0"
-                            max={selectedAssignmentData?.max_score || 100}
-                            value={editingGrade.grade}
-                            onChange={(e) => setEditingGrade({
-                              ...editingGrade,
-                              grade: parseFloat(e.target.value) || 0
-                            })}
-                            className="w-20 px-2 py-1 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                          />
-                        ) : (
-                          <span className="text-sm text-slate-800 dark:text-white">
-                            {currentGrade?.grade ?? '-'} / {selectedAssignmentData?.max_score || 100}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editingGrade.comment}
-                            onChange={(e) => setEditingGrade({
-                              ...editingGrade,
-                              comment: e.target.value
-                            })}
-                            placeholder="Comentario opcional"
-                            className="w-full px-2 py-1 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                          />
-                        ) : (
-                          <span className="text-sm text-slate-600 dark:text-slate-400">
-                            {currentGrade?.comment || '-'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {isEditing ? (
-                          <div className="flex justify-end space-x-2">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              max={selectedAssignmentData?.max_score || 100}
+                              value={editingGrade?.grade || 0}
+                              onChange={(e) => setEditingGrade(prev => prev ? {
+                                ...prev,
+                                grade: parseFloat(e.target.value) || 0
+                              } : null)}
+                              className="w-20 px-2 py-1 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                            />
+                          ) : (
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              studentGrade
+                                ? studentGrade.grade >= 60
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                : 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
+                            }`}>
+                              {studentGrade ? studentGrade.grade : 'Sin calificar'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {isEditing ? (
+                            <textarea
+                              value={editingGrade?.comment || ''}
+                              onChange={(e) => setEditingGrade(prev => prev ? {
+                                ...prev,
+                                comment: e.target.value
+                              } : null)}
+                              rows={2}
+                              className="w-full px-2 py-1 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                              placeholder="Comentario opcional..."
+                            />
+                          ) : (
+                            <div className="text-sm text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                              {studentGrade?.comment || '-'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          {isEditing ? (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => handleSaveGrade(student.id)}
+                                className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
+                              >
+                                <Save size={16} />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-300"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ) : (
                             <button
-                              onClick={() => handleSaveGrade(student.id)}
-                              className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
-                              title="Guardar"
+                              onClick={() => handleEditGrade(student.id, studentGrade)}
+                              className="text-sky-600 hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300"
                             >
-                              <Save size={18} />
+                              <Edit3 size={16} />
                             </button>
-                            <button
-                              onClick={() => setEditingGrade(null)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                              title="Cancelar"
-                            >
-                              <X size={18} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setEditingGrade({
-                              studentId: student.id,
-                              grade: currentGrade?.grade || 0,
-                              comment: currentGrade?.comment || ''
-                            })}
-                            className="text-sky-600 hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300"
-                            title="Editar calificación"
-                          >
-                            <FileText size={18} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {filteredStudents.length === 0 && selectedCourse && (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
-                  <Search size={24} className="text-slate-400" />
-                </div>
-                <h3 className="text-lg font-medium text-slate-800 dark:text-white mb-1">
-                  No se encontraron estudiantes
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400">
-                  {searchTerm 
-                    ? 'No hay estudiantes que coincidan con su búsqueda'
-                    : 'No hay estudiantes inscritos en este curso'
-                  }
-                </p>
-              </div>
-            )}
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
-            <BookOpen size={24} className="text-slate-400" />
-          </div>
-          <h3 className="text-lg font-medium text-slate-800 dark:text-white mb-1">
-            Seleccione un curso y evaluación
-          </h3>
-          <p className="text-slate-600 dark:text-slate-400">
-            Elija un curso y una evaluación para comenzar a calificar
-          </p>
-        </div>
+        </>
       )}
     </div>
   );

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -26,6 +26,17 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
   const location = useLocation();
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   
+  // Close role selector when sidebar closes or user changes
+  useEffect(() => {
+    if (!isOpen) {
+      setShowRoleSelector(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    setShowRoleSelector(false);
+  }, [user]);
+
   // Determinar el rol activo basado en la URL actual y los roles del usuario
   const getCurrentRole = (): 'student' | 'teacher' | 'admin' => {
     if (!user?.role || user.role.length === 0) return 'student';
@@ -61,7 +72,8 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
     ],
     teacher: [
       { path: '/teacher/dashboard', icon: <Home size={20} />, label: 'Inicio' },
-      { path: '/teacher/courses', icon: <BookOpen size={20} />, label: 'Mis Cursos' },
+      { path: '/teacher/courses', icon: <BookOpen size={20} />, label: 'Administrar Contenido' },
+      { path: '/teacher/assignments', icon: <FileText size={20} />, label: 'Evaluaciones' },
       { path: '/teacher/grades', icon: <FileText size={20} />, label: 'Calificaciones' },
     ],
     admin: [

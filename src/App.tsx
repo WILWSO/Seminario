@@ -18,7 +18,9 @@ import AdminManageCourses from './pages/admin/ManageCourses';
 import ManageUsers from './pages/admin/ManageUsers';
 import Settings from './pages/admin/Settings';
 import NotFound from './pages/NotFound';
+import ManageAssignments from './pages/teacher/ManageAssignments';
 import CourseManagement from './pages/teacher/CourseManagement';
+import StudentManagement from './pages/teacher/StudentManagement';
 import NotificationSystem from './components/NotificationSystem';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -72,6 +74,8 @@ function App() {
               <Route path="dashboard" element={<TeacherDashboard />} />
               <Route path="courses" element={<ManageCourses />} />
               <Route path="courses/:id" element={<CourseManagement />} />
+              <Route path="students/:id" element={<StudentManagement />} />
+              <Route path="assignments" element={<ManageAssignments />} />
               <Route path="grades" element={<ManageGrades />} />
             </Route>
             

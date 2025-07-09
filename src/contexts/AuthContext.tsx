@@ -42,11 +42,29 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setUser(profile);
         } catch (error) {
           console.error('Failed to fetch user profile on session check:', error);
-          // Don't throw here, just log the error and continue without profile
+          // Create a minimal user object if profile fetch fails
+          setUser({
+            id: session.user.id,
+            email: session.user.email || '',
+            first_name: '',
+            last_name: '',
+            role: ['student'],
+            document_type: 'dni',
+            document_number: '',
+            social_networks: {},
+            street_address: '',
+            street_number: '',
+            locality: '',
+            department: '',
+            province: '',
+            postal_code: '',
+            country: 'Argentina',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
         }
-      } else {
-        setIsLoading(false);
       }
+      setIsLoading(false);
     });
 
     // Listen for auth changes
@@ -104,28 +122,32 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       if (error) {
         console.error('Database error fetching user profile:', error);
+        // If user doesn't exist in database, this is expected for new users
+        if (error.code === 'PGRST116') {
+          console.log('User profile not found in database - this is normal for new users');
+          return null;
+        }
         throw error;
       }
 
       console.log('User profile fetched successfully:', data);
-      setUser(data);
       return data;
     } catch (error) {
       console.error('Error in fetchUserProfile:', error);
       
       // Check if it's a network error
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        throw new Error('Network connection failed. Please check your internet connection and Supabase configuration.');
+        console.error('Network connection failed. Please check your internet connection and Supabase configuration.');
+        return null;
       }
       
       // Check if it's a Supabase configuration error
       if (error.message?.includes('Invalid API key') || error.message?.includes('Project not found')) {
-        throw new Error('Supabase configuration error. Please check your environment variables.');
+        console.error('Supabase configuration error. Please check your environment variables.');
+        return null;
       }
       
-      throw error;
-    } finally {
-      setIsLoading(false);
+      return null;
     }
   };
 
@@ -154,14 +176,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const logout = async () => {
     try {
+      setIsLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
+      // Clear state immediately
       setUser(null);
       setSession(null);
+      setError(null);
     } catch (err: any) {
       setError(err.message);
+      console.error('Logout error:', err);
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 

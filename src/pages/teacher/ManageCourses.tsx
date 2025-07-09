@@ -4,6 +4,10 @@ import { BookOpen, Plus, Edit, Trash, Users, FileText, Eye, EyeOff, Search } fro
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
+import FileUpload from '../../components/FileUpload';
+import { UploadResult } from '../../services/fileUpload';
 
 interface Course {
   id: string;
@@ -20,6 +24,7 @@ interface Course {
 
 const ManageCourses = () => {
   const { user } = useAuth();
+  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
   const [courses, setCourses] = useState<Course[]>([]);
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +36,9 @@ const ManageCourses = () => {
     description: '',
     credits: 0,
     image_url: '',
+    image_file_name: '',
     syllabus_url: '',
+    syllabus_file_name: '',
     is_active: true
   });
 
@@ -111,8 +118,11 @@ const ManageCourses = () => {
     try {
       setIsLoading(true);
       
-      const courseData = {
-        ...formData,
+      // Exclude UI-only fields that don't exist in the database
+      const { image_file_name, syllabus_file_name, ...courseData } = formData;
+      
+      const finalCourseData = {
+        ...courseData,
         teacher_id: user?.id
       };
       
@@ -120,7 +130,7 @@ const ManageCourses = () => {
         // Update course
         const { error } = await supabase
           .from('courses')
-          .update(courseData)
+          .update(finalCourseData)
           .eq('id', editingCourse.id);
 
         if (error) throw error;
@@ -128,7 +138,7 @@ const ManageCourses = () => {
         // Create course
         const { error } = await supabase
           .from('courses')
-          .insert([courseData]);
+          .insert([finalCourseData]);
 
         if (error) throw error;
       }
@@ -146,9 +156,18 @@ const ManageCourses = () => {
       setEditingCourse(null);
       await fetchCourses();
 
+      showSuccess(
+        editingCourse ? 'Curso actualizado' : 'Curso creado',
+        editingCourse ? 'El curso se ha actualizado correctamente.' : 'El curso se ha creado correctamente.',
+        3000
+      );
     } catch (error) {
       console.error('Error saving course:', error);
-      alert('Error al guardar el curso: ' + (error as Error).message);
+      showError(
+        'Error al guardar curso',
+        'No se pudo guardar el curso. Por favor, intente nuevamente.',
+        5000
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +179,9 @@ const ManageCourses = () => {
       description: course.description,
       credits: course.credits,
       image_url: course.image_url || '',
+      image_file_name: '',
       syllabus_url: course.syllabus_url || '',
+      syllabus_file_name: '',
       is_active: course.is_active
     });
     setEditingCourse(course);
@@ -168,7 +189,7 @@ const ManageCourses = () => {
   };
 
   const handleDelete = async (courseId: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este curso? Esta acción eliminará también todos los módulos, lecciones y inscripciones asociadas.')) {
+    if (!window.confirm('¿Está seguro de que desea eliminar este curso? Esta acción eliminará también todos los módulos, lecciones y inscripciones asociadas.')) {
       return;
     }
 
@@ -180,9 +201,19 @@ const ManageCourses = () => {
 
       if (error) throw error;
       await fetchCourses();
+      
+      showSuccess(
+        'Curso eliminado',
+        'El curso se ha eliminado correctamente.',
+        3000
+      );
     } catch (error) {
       console.error('Error deleting course:', error);
-      alert('Error al eliminar el curso: ' + (error as Error).message);
+      showError(
+        'Error al eliminar curso',
+        'No se pudo eliminar el curso. Por favor, intente nuevamente.',
+        5000
+      );
     }
   };
 
@@ -195,9 +226,19 @@ const ManageCourses = () => {
 
       if (error) throw error;
       await fetchCourses();
+      
+      showSuccess(
+        'Estado actualizado',
+        `El curso se ha ${!currentStatus ? 'activado' : 'desactivado'} correctamente.`,
+        3000
+      );
     } catch (error) {
       console.error('Error updating course status:', error);
-      alert('Error al cambiar el estado del curso: ' + (error as Error).message);
+      showError(
+        'Error al cambiar estado',
+        'No se pudo cambiar el estado del curso. Por favor, intente nuevamente.',
+        5000
+      );
     }
   };
 
@@ -207,11 +248,45 @@ const ManageCourses = () => {
       description: '',
       credits: 0,
       image_url: '',
+      image_file_name: '',
       syllabus_url: '',
+      syllabus_file_name: '',
       is_active: true
     });
     setIsCreating(false);
     setEditingCourse(null);
+  };
+
+  const handleImageUpload = (result: UploadResult) => {
+    setFormData(prev => ({
+      ...prev,
+      image_url: result.url,
+      image_file_name: result.fileName
+    }));
+  };
+
+  const handleImageRemove = () => {
+    setFormData(prev => ({
+      ...prev,
+      image_url: '',
+      image_file_name: ''
+    }));
+  };
+
+  const handleSyllabusUpload = (result: UploadResult) => {
+    setFormData(prev => ({
+      ...prev,
+      syllabus_url: result.url,
+      syllabus_file_name: result.fileName
+    }));
+  };
+
+  const handleSyllabusRemove = () => {
+    setFormData(prev => ({
+      ...prev,
+      syllabus_url: '',
+      syllabus_file_name: ''
+    }));
   };
 
   if (isLoading && courses.length === 0) {
@@ -224,6 +299,11 @@ const ManageCourses = () => {
 
   return (
     <div className="space-y-6">
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
@@ -235,11 +315,12 @@ const ManageCourses = () => {
         </div>
         {!isCreating && (
           <button
-            onClick={() => setIsCreating(true)}
-            className="mt-4 md:mt-0 inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
+            disabled
+            className="mt-4 md:mt-0 inline-flex items-center px-4 py-2 bg-slate-400 text-white rounded-md cursor-not-allowed transition"
+            title="Solo los administradores pueden crear cursos"
           >
             <Plus size={18} className="mr-2" />
-            Nuevo curso
+            Solo admins pueden crear cursos
           </button>
         )}
       </div>
@@ -308,28 +389,62 @@ const ManageCourses = () => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  URL de imagen
+                  Imagen del curso
                 </label>
-                <input
-                  type="url"
-                  name="image_url"
-                  value={formData.image_url}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    name="image_url"
+                    value={formData.image_url}
+                    onChange={(e) => {
+                      handleChange(e);
+                      setFormData(prev => ({ ...prev, image_file_name: '' }));
+                    }}
+                    placeholder="URL de imagen (opcional si sube archivo)"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                  />
+                  <div className="text-center text-xs text-slate-500 dark:text-slate-400">O</div>
+                  <FileUpload
+                    onFileSelect={handleImageUpload}
+                    onFileRemove={handleImageRemove}
+                    currentFile={formData.image_url}
+                    currentFileName={formData.image_file_name}
+                    acceptedTypes={['image/*']}
+                    maxSizeMB={5}
+                    label=""
+                    description="Subir imagen del curso"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  URL del programa
+                  Programa del curso
                 </label>
-                <input
-                  type="url"
-                  name="syllabus_url"
-                  value={formData.syllabus_url}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    name="syllabus_url"
+                    value={formData.syllabus_url}
+                    onChange={(e) => {
+                      handleChange(e);
+                      setFormData(prev => ({ ...prev, syllabus_file_name: '' }));
+                    }}
+                    placeholder="URL del programa (opcional si sube archivo)"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                  />
+                  <div className="text-center text-xs text-slate-500 dark:text-slate-400">O</div>
+                  <FileUpload
+                    onFileSelect={handleSyllabusUpload}
+                    onFileRemove={handleSyllabusRemove}
+                    currentFile={formData.syllabus_url}
+                    currentFileName={formData.syllabus_file_name}
+                    acceptedTypes={['application/pdf', '.doc', '.docx']}
+                    maxSizeMB={5}
+                    label=""
+                    description="Subir programa del curso (PDF, Word)"
+                  />
+                </div>
               </div>
             </div>
 
@@ -447,6 +562,14 @@ const ManageCourses = () => {
                     <BookOpen size={18} />
                   </Link>
                   
+                  <Link
+                    to={`/teacher/students/${course.id}`}
+                    className="p-2 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20 rounded-md transition"
+                    title="Ver estudiantes"
+                  >
+                    <Users size={18} />
+                  </Link>
+                  
                   <button
                     onClick={() => handleEdit(course)}
                     className="p-2 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/20 rounded-md transition"
@@ -457,8 +580,9 @@ const ManageCourses = () => {
                   
                   <button
                     onClick={() => handleDelete(course.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-md transition"
-                    title="Eliminar curso"
+                    className="p-2 text-slate-400 cursor-not-allowed rounded-md transition"
+                    title="Solo los administradores pueden eliminar cursos"
+                    disabled
                   >
                     <Trash size={18} />
                   </button>

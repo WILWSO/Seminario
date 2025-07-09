@@ -10,6 +10,13 @@ const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // Close sidebar when user logs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSidebarOpen(false);
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);

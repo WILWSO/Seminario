@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { User, Search, Filter, Plus, Edit, Trash, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { adminService } from '../../services/api';
 import { supabase } from '../../config/supabase';
 import type { User as UserType } from '../../config/supabase';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
 
 const ManageUsers = () => {
+  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
   const [users, setUsers] = useState<UserType[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,11 +22,22 @@ const ManageUsers = () => {
     const fetchUsers = async () => {
       try {
         setIsLoading(true);
-        const usersData = await adminService.getAllUsers();
-        setUsers(usersData);
-        setFilteredUsers(usersData);
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        setUsers(data || []);
+        setFilteredUsers(data || []);
       } catch (error) {
         console.error('Error fetching users:', error);
+        showError(
+          'Error al cargar usuarios',
+          'No se pudieron cargar los usuarios. Por favor, intente nuevamente.',
+          5000
+        );
         setUsers([]);
         setFilteredUsers([]);
       } finally {
@@ -61,7 +74,6 @@ const ManageUsers = () => {
 
   const handleAddRole = async (userId: string, newRole: 'student' | 'teacher' | 'admin') => {
     try {
-      // Usar a função do Supabase para adicionar role
       const { error } = await supabase.rpc('add_user_role', {
         user_id: userId,
         new_role: newRole
@@ -69,7 +81,6 @@ const ManageUsers = () => {
 
       if (error) throw error;
 
-      // Atualizar estado local
       setUsers(prevUsers => 
         prevUsers.map(user => 
           user.id === userId 
@@ -77,22 +88,34 @@ const ManageUsers = () => {
             : user
         )
       );
+      
+      showSuccess(
+        'Rol agregado',
+        `Se ha agregado el rol ${newRole} al usuario correctamente.`,
+        3000
+      );
     } catch (error) {
       console.error('Error adding role:', error);
-      alert('Error al agregar rol: ' + (error as Error).message);
+      showError(
+        'Error al agregar rol',
+        'No se pudo agregar el rol. Por favor, intente nuevamente.',
+        5000
+      );
     }
   };
 
   const handleRemoveRole = async (userId: string, roleToRemove: 'student' | 'teacher' | 'admin') => {
-    // Verificar se é o último role
     const user = users.find(u => u.id === userId);
     if (user && user.role && user.role.length <= 1) {
-      alert('No se puede eliminar el último rol del usuario. Cada usuario debe tener al menos un rol.');
+      showError(
+        'No se puede eliminar',
+        'No se puede eliminar el último rol del usuario. Cada usuario debe tener al menos un rol.',
+        5000
+      );
       return;
     }
     
     try {
-      // Usar a função do Supabase para remover role
       const { error } = await supabase.rpc('remove_user_role', {
         user_id: userId,
         old_role: roleToRemove
@@ -100,7 +123,6 @@ const ManageUsers = () => {
 
       if (error) throw error;
 
-      // Atualizar estado local
       setUsers(prevUsers => 
         prevUsers.map(user => 
           user.id === userId 
@@ -108,23 +130,49 @@ const ManageUsers = () => {
             : user
         )
       );
+      
+      showSuccess(
+        'Rol eliminado',
+        `Se ha eliminado el rol ${roleToRemove} del usuario correctamente.`,
+        3000
+      );
     } catch (error) {
       console.error('Error removing role:', error);
-      alert('Error al remover rol: ' + (error as Error).message);
+      showError(
+        'Error al eliminar rol',
+        'No se pudo eliminar el rol. Por favor, intente nuevamente.',
+        5000
+      );
     }
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('¿Está seguro de que desea eliminar este usuario? Esta acción no se puede deshacer.')) {
+    if (!window.confirm('¿Está seguro de que desea eliminar este usuario? Esta acción no se puede deshacer.')) {
       return;
     }
 
     try {
-      await adminService.deleteUser(userId);
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+      
       setUsers(prevUsers => prevUsers.filter(user => user.id !== userId));
+      
+      showSuccess(
+        'Usuario eliminado',
+        'El usuario se ha eliminado correctamente.',
+        3000
+      );
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Error al eliminar usuario: ' + (error as Error).message);
+      showError(
+        'Error al eliminar usuario',
+        'No se pudo eliminar el usuario. Por favor, intente nuevamente.',
+        5000
+      );
     }
   };
 
@@ -163,6 +211,11 @@ const ManageUsers = () => {
 
   return (
     <div className="space-y-6">
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">

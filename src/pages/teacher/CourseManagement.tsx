@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen, Plus, Edit, Trash, Play, FileText, Save, X, Rectan
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
+import LessonContentManager from '../../components/LessonContentManager';
 
 interface Course {
   id: string;
@@ -50,8 +51,6 @@ const CourseManagement = () => {
   const [lessonForm, setLessonForm] = useState({
     title: '',
     description: '',
-    type: 'video' as 'video' | 'document' | 'quiz',
-    content_url: '',
     duration: '',
   });
 
@@ -201,18 +200,13 @@ const CourseManagement = () => {
       return;
     }
 
-    if (!lessonForm.type) {
-      alert('El tipo de lección es obligatorio');
-      return;
-    }
 
     try {
       const module = modules.find(m => m.id === moduleId);
       const lessonData = {
         title: lessonForm.title.trim(),
         description: lessonForm.description.trim() || null,
-        type: lessonForm.type,
-        content_url: lessonForm.content_url.trim() || null,
+        type: 'lesson', // Tipo padrão para lições
         duration: lessonForm.duration.trim() || null,
         module_id: moduleId,
         order: editingLesson ? editingLesson.order : (module?.lessons.length || 0) + 1
@@ -242,7 +236,7 @@ const CourseManagement = () => {
       }
 
       // Limpiar formulario y cerrar modal
-      setLessonForm({ title: '', description: '', type: 'video', content_url: '', duration: '' });
+      setLessonForm({ title: '', description: '', duration: '' });
       setIsCreatingLesson(null);
       setEditingLesson(null);
       
@@ -456,8 +450,6 @@ const CourseManagement = () => {
     setLessonForm({
       title: lesson.title,
       description: lesson.description,
-      type: lesson.type,
-      content_url: lesson.content_url,
       duration: lesson.duration
     });
     setEditingLesson(lesson);
@@ -471,7 +463,7 @@ const CourseManagement = () => {
   };
 
   const cancelLessonForm = () => {
-    setLessonForm({ title: '', description: '', type: 'video', content_url: '', duration: '' });
+    setLessonForm({ title: '', description: '', duration: '' });
     setIsCreatingLesson(null);
     setEditingLesson(null);
   };
@@ -696,7 +688,7 @@ const CourseManagement = () => {
                 </h4>
                 
                 <form onSubmit={(e) => handleLessonSubmit(e, module.id)} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                         Título de la lección *
@@ -708,21 +700,6 @@ const CourseManagement = () => {
                         required
                         className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
                       />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Tipo de lección *
-                      </label>
-                      <select
-                        value={lessonForm.type}
-                        onChange={(e) => setLessonForm({ ...lessonForm, type: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                      >
-                        <option value="video">Video</option>
-                        <option value="document">Documento</option>
-                        <option value="quiz">Evaluación</option>
-                      </select>
                     </div>
                   </div>
                   
@@ -738,32 +715,17 @@ const CourseManagement = () => {
                     />
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        URL del contenido
-                      </label>
-                      <input
-                        type="url"
-                        value={lessonForm.content_url}
-                        onChange={(e) => setLessonForm({ ...lessonForm, content_url: e.target.value })}
-                        placeholder="https://ejemplo.com/video.mp4"
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Duración
-                      </label>
-                      <input
-                        type="text"
-                        value={lessonForm.duration}
-                        onChange={(e) => setLessonForm({ ...lessonForm, duration: e.target.value })}
-                        placeholder="ex: 45 min, 1h 30min"
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Duración estimada
+                    </label>
+                    <input
+                      type="text"
+                      value={lessonForm.duration}
+                      onChange={(e) => setLessonForm({ ...lessonForm, duration: e.target.value })}
+                      placeholder="ej: 45 min, 1h 30min"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                    />
                   </div>
                   
                   <div className="flex justify-end space-x-3">
@@ -788,45 +750,55 @@ const CourseManagement = () => {
             {/* Lessons List */}
             <div className="divide-y divide-slate-200 dark:divide-slate-700">
               {module.lessons.map((lesson, lessonIndex) => (
-                <div key={lesson.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-750 transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center flex-1">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mr-3">
-                        {getLessonIcon(lesson.type)}
-                      </div>
-                      <div className="flex-1">
-                        <h5 className="font-medium text-slate-800 dark:text-white">
-                          Lección {lessonIndex + 1}: {lesson.title}
-                        </h5>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                          {lesson.description}
-                        </p>
-                        <div className="flex items-center mt-1 text-xs text-slate-500 dark:text-slate-500">
-                          <span className="capitalize mr-3">
-                            {lesson.type === 'video' ? 'Video' : 
-                             lesson.type === 'document' ? 'Documento' : 'Evaluación'}
-                          </span>
-                          {lesson.duration && (
-                            <span>{lesson.duration}</span>
-                          )}
+                <div key={lesson.id} className="space-y-4">
+                  <div className="p-4 hover:bg-slate-50 dark:hover:bg-slate-750 transition">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center flex-1">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mr-3">
+                            {getLessonIcon(lesson.type)}
+                          </div>
+                          <div className="flex-1">
+                            <h5 className="font-medium text-slate-800 dark:text-white">
+                              Lección {lessonIndex + 1}: {lesson.title}
+                            </h5>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                              {lesson.description}
+                            </p>
+                            <div className="flex items-center mt-1 text-xs text-slate-500 dark:text-slate-500">
+                              {lesson.duration && (
+                                <span>{lesson.duration}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleEditLesson(lesson)}
+                            className="p-1 text-slate-600 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-400 transition"
+                            title="Editar lección"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteLesson(lesson.id)}
+                            className="p-1 text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition"
+                            title="Eliminar lección"
+                          >
+                            <Trash size={16} />
+                          </button>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleEditLesson(lesson)}
-                        className="p-1 text-slate-600 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-400 transition"
-                        title="Editar lección"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteLesson(lesson.id)}
-                        className="p-1 text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition"
-                        title="Eliminar lección"
-                      >
-                        <Trash size={16} />
-                      </button>
+                    
+                    {/* Lesson Content Manager */}
+                    <div className="mt-4 pl-11">
+                      <LessonContentManager 
+                        lessonId={lesson.id}
+                        onContentChange={() => {
+                          // Opcional: recarregar dados se necessário
+                        }}
+                      />
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Filter, BookOpen, UserPlus, Check, Clock, Users } from 'lucide-react';
+import { Search, Filter, BookOpen, UserPlus, Check, Clock, Users, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { courseService, studentService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,7 @@ interface Course {
   enrollment_available: boolean;
   enrollment_open: boolean;
   enrollment_start_date?: string;
+  period?: string;
   enrollment_end_date?: string;
   max_students?: number;
   current_enrollments: number;
@@ -34,9 +35,11 @@ const CoursesList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(false); 
+  const [periods, setPeriods] = useState<string[]>([]);
   const [filter, setFilter] = useState({
     enrolled: 'all', // 'all', 'enrolled', 'available', 'unavailable'
+    period: 'all'
   });
 
   const fetchAndProcessCourses = useCallback(async () => {
@@ -48,7 +51,7 @@ const CoursesList = () => {
       const { data: coursesData, error } = await supabase
         .from('courses')
         .select(`
-          *,
+          id, name, description, teacher_id, credits, image_url, syllabus_url, is_active, enrollment_open, period,
           teacher:users!courses_teacher_id_fkey(id, name, first_name, last_name),
           enrollments(count)
         `)
@@ -56,6 +59,13 @@ const CoursesList = () => {
         .order('name');
 
       if (error) throw error;
+
+      // Extraer períodos únicos para filtro
+      const uniquePeriods = [...new Set((coursesData || [])
+        .map((course: any) => course.period)
+        .filter(Boolean))];
+      
+      setPeriods(uniquePeriods);
 
       // Verificar matrículas do usuário
       const { data: userEnrollments, error: enrollmentError } = await supabase
@@ -87,6 +97,7 @@ const CoursesList = () => {
             enrollment_available: enrollmentAvailable,
             enrollment_open: course.enrollment_open,
             enrollment_start_date: course.enrollment_start_date,
+            period: course.period,
             enrollment_end_date: course.enrollment_end_date,
             max_students: course.max_students,
             current_enrollments: course.enrollments?.length || 0,
@@ -140,9 +151,14 @@ const CoursesList = () => {
     } else if (filter.enrolled === 'unavailable') {
       result = filterCourses(allCourses.filter(course => !course.enrollment_available && !course.enrolled));
     }
+
+    // Aplicar filtro de período
+    if (filter.period !== 'all') {
+      result = result.filter(course => course.period === filter.period);
+    }
     
     setFilteredCourses(result);
-  }, [allCourses, searchTerm, filter]);
+  }, [allCourses, searchTerm, filter.enrolled, filter.period]);
 
   const handleEnrollment = async (courseId: string) => {
     if (!user?.id) return;
@@ -253,6 +269,12 @@ const CoursesList = () => {
             <p className="text-sm text-slate-600 dark:text-slate-400">
               <span className="font-medium">Profesor:</span> {course.professor}
             </p>
+            {course.period && (
+              <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
+                <Calendar size={14} className="mr-1" />
+                <span className="font-medium">Período:</span> {course.period}
+              </p>
+            )}
             <p className="text-sm text-slate-600 dark:text-slate-400">
               <span className="font-medium">Créditos:</span> {course.credits}
             </p>
@@ -378,6 +400,26 @@ const CoursesList = () => {
                   <option value="unavailable">Cursos no disponibles</option>
                 </select>
               </div>
+              
+              {periods.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Período académico
+                  </label>
+                  <select
+                    value={filter.period}
+                    onChange={(e) => setFilter({ ...filter, period: e.target.value })}
+                    className="w-full border border-slate-300 dark:border-slate-600 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                  >
+                    <option value="all">Todos los períodos</option>
+                    {periods.map(period => (
+                      <option key={period} value={period}>
+                        {period}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         )}

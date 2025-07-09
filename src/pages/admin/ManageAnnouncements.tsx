@@ -1,8 +1,10 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { Bell, Plus, Edit, Trash, ArrowLeft, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { announcementService } from '../../services/api';
+import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
 
 interface Announcement {
   id: number;
@@ -14,6 +16,7 @@ interface Announcement {
 
 const ManageAnnouncements = () => {
   const { user } = useAuth();
+  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -26,17 +29,33 @@ const ManageAnnouncements = () => {
   useEffect(() => {
     const fetchAnnouncements = async () => {
       try {
-        const data = await announcementService.getAnnouncements(10);
+        const { data, error } = await supabase
+          .from('announcements')
+          .select(`
+            *,
+            author:users!announcements_created_by_fkey(id, name, first_name, last_name)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+
         setAnnouncements((data || []).map((ann: any) => ({
           id: parseInt(ann.id),
           title: ann.title,
           content: ann.content,
           created_at: ann.created_at,
-          author: ann.author?.name || 'Admin'
+          author: ann.author?.name || 
+                 `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() || 
+                 'Admin'
         })));
       } catch (error) {
         console.error('Error fetching announcements:', error);
-        // Set empty array on error
+        showError(
+          'Error al cargar anuncios',
+          'No se pudieron cargar los anuncios. Por favor, intente nuevamente.',
+          5000
+        );
         setAnnouncements([]);
       } finally {
         setIsLoading(false);
@@ -60,38 +79,81 @@ const ManageAnnouncements = () => {
       setIsLoading(true);
       
       if (editingId) {
-        await announcementService.updateAnnouncement(editingId.toString(), formData.title, formData.content);
+        const { error } = await supabase
+          .from('announcements')
+          .update({
+            title: formData.title,
+            content: formData.content,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingId);
+
+        if (error) throw error;
+
         setAnnouncements(prev => 
           prev.map(item => 
             item.id === editingId 
-              ? { ...item, title: formData.title, content: formData.content } 
+              ? { 
+                  ...item, 
+                  title: formData.title, 
+                  content: formData.content 
+                } 
               : item
           )
         );
         
-        setEditingId(null);
-      } else {
-        const newAnn = await announcementService.createAnnouncement(
-          formData.title, 
-          formData.content, 
-          user.id
+        showSuccess(
+          '¡Anuncio actualizado!',
+          'El anuncio se ha actualizado correctamente.',
+          3000
         );
         
+        setEditingId(null);
+      } else {
+        const { data, error } = await supabase
+          .from('announcements')
+          .insert([{
+            title: formData.title,
+            content: formData.content,
+            created_by: user.id
+          }])
+          .select(`
+            *,
+            author:users!announcements_created_by_fkey(id, name, first_name, last_name)
+          `)
+          .single();
+
+        if (error) throw error;
+        
         const newAnnouncement = {
-          id: parseInt(newAnn.id),
-          title: newAnn.title,
-          content: newAnn.content,
-          created_at: newAnn.created_at,
-          author: user.name
+          id: parseInt(data.id),
+          title: data.title,
+          content: data.content,
+          created_at: data.created_at,
+          author: data.author?.name || 
+                 `${data.author?.first_name || ''} ${data.author?.last_name || ''}`.trim() || 
+                 user?.name || 'Admin'
         };
         
         setAnnouncements(prev => [newAnnouncement, ...prev]);
+        
+        showSuccess(
+          '¡Anuncio creado!',
+          'El anuncio se ha publicado correctamente.',
+          3000
+        );
+        
         setIsCreating(false);
       }
       
       setFormData({ title: '', content: '' });
     } catch (error) {
       console.error('Error saving announcement:', error);
+      showError(
+        'Error al guardar',
+        'No se pudo guardar el anuncio. Por favor, intente nuevamente.',
+        5000
+      );
     } finally {
       setIsLoading(false);
     }
@@ -114,10 +176,27 @@ const ManageAnnouncements = () => {
     try {
       setIsLoading(true);
       
-      await announcementService.deleteAnnouncement(id.toString());
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
       setAnnouncements(prev => prev.filter(item => item.id !== id));
+      
+      showSuccess(
+        'Anuncio eliminado',
+        'El anuncio se ha eliminado correctamente.',
+        3000
+      );
     } catch (error) {
       console.error('Error deleting announcement:', error);
+      showError(
+        'Error al eliminar',
+        'No se pudo eliminar el anuncio. Por favor, intente nuevamente.',
+        5000
+      );
     } finally {
       setIsLoading(false);
     }
@@ -139,6 +218,11 @@ const ManageAnnouncements = () => {
 
   return (
     <div className="space-y-6">
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">

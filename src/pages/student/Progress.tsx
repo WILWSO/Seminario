@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Award, Clock, CheckCircle, Circle, BarChart3, TrendingUp, Calendar, FileText } from 'lucide-react';
+import { BookOpen, Award, Clock, CheckCircle, Circle, BarChart3, TrendingUp, Calendar, FileText, CheckSquare, XSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
@@ -9,8 +9,14 @@ interface EnrolledCourse {
   name: string;
   description: string;
   credits: number;
+  period?: string;
   teacher_name: string;
   enrollment_date: string;
+  period: string | null;
+  status: string | null;
+  final_grade: number | null;
+  observations: string | null;
+  completion_date: string | null;
   image_url?: string;
   progress: {
     total_modules: number;
@@ -30,6 +36,9 @@ interface EnrolledCourse {
   }[];
   average_grade: number;
   status: 'in_progress' | 'completed' | 'not_started';
+  final_grade?: number;
+  observations?: string;
+  completion_date?: string;
 }
 
 interface OverallStats {
@@ -38,6 +47,7 @@ interface OverallStats {
   in_progress_courses: number;
   total_credits: number;
   completed_credits: number;
+  approved_credits: number;
   overall_average: number;
   total_assignments: number;
   graded_assignments: number;
@@ -52,12 +62,15 @@ const Progress = () => {
     in_progress_courses: 0,
     total_credits: 0,
     completed_credits: 0,
+    approved_credits: 0,
     overall_average: 0,
     total_assignments: 0,
     graded_assignments: 0
   });
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
+  const [periods, setPeriods] = useState<string[]>([]);
 
   useEffect(() => {
     if (user?.id) {
@@ -69,23 +82,29 @@ const Progress = () => {
     try {
       setIsLoading(true);
 
-      // Buscar cursos matriculados
+      // Buscar cursos matriculados com informações detalhadas
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
         .select(`
           enrollment_date,
+          status,
+          final_grade,
+          observations,
+          completion_date,
           course:courses(
             id,
             name,
             description,
             credits,
             image_url,
+            period,
             teacher:users!courses_teacher_id_fkey(name, first_name, last_name),
             modules(
               id,
               lessons(
                 id,
-                title
+                title,
+                lesson_contents(id)
               )
             ),
             assignments(
@@ -100,7 +119,7 @@ const Progress = () => {
 
       if (enrollmentsError) throw enrollmentsError;
 
-      // Buscar lições completadas
+      // Buscar lições completadas pelo usuário
       const { data: completedLessons, error: completedError } = await supabase
         .from('completed_lessons')
         .select('lesson_id')
@@ -110,7 +129,7 @@ const Progress = () => {
 
       const completedLessonIds = new Set(completedLessons?.map(cl => cl.lesson_id) || []);
 
-      // Buscar notas
+      // Buscar notas do estudante
       const { data: gradesData, error: gradesError } = await supabase
         .from('grades')
         .select(`
@@ -128,13 +147,20 @@ const Progress = () => {
 
       if (gradesError) throw gradesError;
 
-      // Processar dados dos cursos
+      // Extrair períodos únicos para filtro
+      const uniquePeriods = [...new Set((enrollmentsData || [])
+        .map((enrollment: any) => enrollment.course?.period)
+        .filter(Boolean))];
+      
+      setPeriods(uniquePeriods);
+
+      // Processar dados dos cursos com progresso detalhado
       const processedCourses: EnrolledCourse[] = (enrollmentsData || []).map((enrollment: any) => {
         const course = enrollment.course;
         const modules = course.modules || [];
         const assignments = course.assignments || [];
         
-        // Calcular progresso
+        // Calcular progresso baseado em lições completadas
         const totalLessons = modules.reduce((sum: number, module: any) => 
           sum + (module.lessons?.length || 0), 0);
         
@@ -143,6 +169,7 @@ const Progress = () => {
             completedLessonIds.has(lesson.id)).length || 0);
         }, 0);
 
+        // Calcular módulos completados (módulo é considerado completo se todas as lições foram completadas)
         const completedModules = modules.filter((module: any) => {
           const moduleLessons = module.lessons || [];
           return moduleLessons.length > 0 && 
@@ -152,7 +179,7 @@ const Progress = () => {
         const progressPercentage = totalLessons > 0 ? 
           Math.round((completedLessonsCount / totalLessons) * 100) : 0;
 
-        // Buscar notas do curso
+        // Filtrar notas específicas do curso
         const courseGrades = (gradesData || [])
           .filter((grade: any) => grade.assignment?.course_id === course.id)
           .map((grade: any) => ({
@@ -165,14 +192,16 @@ const Progress = () => {
             graded_at: grade.created_at
           }));
 
-        // Calcular promedio del curso
+        // Calcular promedio geral do curso
         const averageGrade = courseGrades.length > 0 ? 
           courseGrades.reduce((sum, grade) => sum + grade.percentage, 0) / courseGrades.length : 0;
 
-        // Determinar status
+        // Determinar status do curso
         let status: 'in_progress' | 'completed' | 'not_started' = 'not_started';
-        if (completedLessonsCount > 0) {
-          status = progressPercentage === 100 ? 'completed' : 'in_progress';
+        if (enrollment.status === 'Approved' || enrollment.status === 'Failed' || enrollment.status === 'Auditing') {
+          status = 'completed';
+        } else if (completedLessonsCount > 0) {
+          status = 'in_progress';
         }
 
         return {
@@ -180,6 +209,7 @@ const Progress = () => {
           name: course.name,
           description: course.description || '',
           credits: course.credits,
+          period: course.period,
           teacher_name: course.teacher?.name || 
                       `${course.teacher?.first_name || ''} ${course.teacher?.last_name || ''}`.trim() || 
                       'Profesor',
@@ -194,13 +224,16 @@ const Progress = () => {
           },
           grades: courseGrades,
           average_grade: averageGrade,
-          status
+          status: enrollment.status === 'In Progress' ? 'in_progress' : status,
+          final_grade: enrollment.final_grade,
+          observations: enrollment.observations,
+          completion_date: enrollment.completion_date
         };
       });
 
       setEnrolledCourses(processedCourses);
 
-      // Calcular estatísticas gerais
+      // Calcular estatísticas gerais do estudante
       const totalCourses = processedCourses.length;
       const completedCourses = processedCourses.filter(c => c.status === 'completed').length;
       const inProgressCourses = processedCourses.filter(c => c.status === 'in_progress').length;
@@ -208,13 +241,21 @@ const Progress = () => {
       const completedCredits = processedCourses
         .filter(c => c.status === 'completed')
         .reduce((sum, course) => sum + course.credits, 0);
+      const approvedCredits = processedCourses
+        .filter(c => c.status === 'completed' && c.final_grade && c.final_grade >= 60)
+        .reduce((sum, course) => sum + course.credits, 0);
       
       const allGrades = processedCourses.flatMap(course => course.grades);
       const overallAverage = allGrades.length > 0 ? 
         allGrades.reduce((sum, grade) => sum + grade.percentage, 0) / allGrades.length : 0;
 
-      const totalAssignments = processedCourses.reduce((sum, course) => 
-        sum + (course.course?.assignments?.length || 0), 0);
+      // Contar total de avaliações disponíveis
+      const { data: assignmentsCount, error: assignmentsCountError } = await supabase
+        .from('assignments')
+        .select('id', { count: 'exact' })
+        .in('course_id', processedCourses.map(c => c.id));
+
+      if (assignmentsCountError) throw assignmentsCountError;
 
       setOverallStats({
         total_courses: totalCourses,
@@ -222,8 +263,9 @@ const Progress = () => {
         in_progress_courses: inProgressCourses,
         total_credits: totalCredits,
         completed_credits: completedCredits,
+        approved_credits: approvedCredits,
         overall_average: overallAverage,
-        total_assignments: totalAssignments,
+        total_assignments: assignmentsCount.count || 0,
         graded_assignments: allGrades.length
       });
 
@@ -260,6 +302,45 @@ const Progress = () => {
     }
   };
 
+  const getEnrollmentStatusIcon = (course: EnrolledCourse) => {
+    if (course.status === 'completed') {
+      if (course.final_grade && course.final_grade >= 60) {
+        return <CheckSquare size={18} className="text-green-600 dark:text-green-400" />; 
+      } else if (course.final_grade) {
+        return <XSquare size={18} className="text-red-600 dark:text-red-400" />;
+      } else {
+        return <BookOpen size={18} className="text-purple-600 dark:text-purple-400" />;
+      }
+    }
+    return <Clock size={18} className="text-blue-600 dark:text-blue-400" />;
+  };
+
+  const getEnrollmentStatusText = (course: EnrolledCourse) => {
+    if (course.status === 'completed') {
+      if (course.final_grade && course.final_grade >= 60) {
+        return 'Aprobado'; 
+      } else if (course.final_grade) {
+        return 'Reprobado';
+      } else {
+        return 'Oyente';
+      }
+    }
+    return 'En Progreso';
+  };
+
+  const getEnrollmentStatusColor = (course: EnrolledCourse) => {
+    if (course.status === 'completed') {
+      if (course.final_grade && course.final_grade >= 60) {
+        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'; 
+      } else if (course.final_grade) {
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      } else {
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
+      }
+    }
+    return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+  };
+
   const getGradeColor = (percentage: number) => {
     if (percentage >= 90) return 'text-green-600 dark:text-green-400';
     if (percentage >= 80) return 'text-blue-600 dark:text-blue-400';
@@ -267,6 +348,11 @@ const Progress = () => {
     if (percentage >= 60) return 'text-orange-600 dark:text-orange-400';
     return 'text-red-600 dark:text-red-400';
   };
+
+  // Filter courses by period
+  const filteredCourses = selectedPeriod === 'all' 
+    ? enrolledCourses 
+    : enrolledCourses.filter(course => course.period === selectedPeriod);
 
   if (isLoading) {
     return (
@@ -337,10 +423,10 @@ const Progress = () => {
             </div>
             <div className="ml-4">
               <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Créditos Obtenidos
+                Créditos Aprobados
               </h3>
               <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {overallStats.completed_credits}/{overallStats.total_credits}
+                {overallStats.approved_credits}/{overallStats.total_credits}
               </p>
             </div>
           </div>
@@ -366,13 +452,36 @@ const Progress = () => {
         </motion.div>
       </div>
 
+      {/* Filtro por período */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Filtrar por período
+            </label>
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+            >
+              <option value="all">Todos los períodos</option>
+              {periods.map(period => (
+                <option key={period} value={period}>
+                  {period}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Lista de Cursos */}
       <div className="space-y-6">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-white">
           Detalle por Curso
         </h2>
 
-        {enrolledCourses.map((course) => (
+        {filteredCourses.map((course) => (
           <motion.div
             key={course.id}
             whileHover={{ y: -2 }}
@@ -395,10 +504,19 @@ const Progress = () => {
                       </h3>
                       <p className="text-slate-600 dark:text-slate-400 text-sm mb-2">
                         Profesor: {course.teacher_name} • {course.credits} créditos
+                        {course.period && <span> • Período: {course.period}</span>}
                       </p>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(course.status)}`}>
-                        {getStatusText(course.status)}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${getEnrollmentStatusColor(course)}`}>
+                          {getEnrollmentStatusIcon(course)}
+                          <span className="ml-1">{getEnrollmentStatusText(course)}</span>
+                        </span>
+                        {course.final_grade && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getGradeColor(course.final_grade)}`}>
+                            {course.final_grade}%
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -434,7 +552,30 @@ const Progress = () => {
                       month: 'long',
                       day: 'numeric'
                     })}
+                    {course.completion_date && (
+                      <>
+                        <span className="mx-2">•</span>
+                        <Clock size={12} className="inline mr-1" />
+                        Completado el {new Date(course.completion_date).toLocaleDateString('es-AR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </>
+                    )}
                   </div>
+
+                  {/* Observaciones del profesor */}
+                  {course.observations && (
+                    <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-750 rounded-lg">
+                      <h4 className="text-sm font-medium text-slate-800 dark:text-white mb-1">
+                        Observaciones del profesor:
+                      </h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        {course.observations}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Calificaciones */}
@@ -495,7 +636,7 @@ const Progress = () => {
           </motion.div>
         ))}
 
-        {enrolledCourses.length === 0 && (
+        {filteredCourses.length === 0 && (
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
               <BookOpen size={24} className="text-slate-400" />
@@ -504,7 +645,9 @@ const Progress = () => {
               No hay cursos matriculados
             </h3>
             <p className="text-slate-600 dark:text-slate-400">
-              Dirígete a la sección de cursos para matricularte en tu primer curso.
+              {selectedPeriod !== 'all' 
+                ? `No hay cursos para el período ${selectedPeriod}`
+                : 'Dirígete a la sección de cursos para matricularte en tu primer curso.'}
             </p>
           </div>
         )}

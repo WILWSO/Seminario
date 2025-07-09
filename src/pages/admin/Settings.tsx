@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Save, Settings as SettingsIcon, Database, Mail, Shield, Globe, Bell, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
 
 interface SystemSettings {
   site_name: string;
@@ -27,6 +29,7 @@ interface SystemSettings {
 }
 
 const Settings = () => {
+  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
   const [settings, setSettings] = useState<SystemSettings>({
     site_name: 'SEMBRAR',
     site_description: 'Seminário Bíblico Reformado da Argentina',
@@ -63,10 +66,61 @@ const Settings = () => {
   const fetchSettings = async () => {
     try {
       setIsLoading(true);
-      // En un sistema real, esto vendría de una tabla de configuraciones
-      // Por ahora usamos valores por defecto
+      
+      // Buscar todas as configurações do sistema
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('key, value');
+
+      if (error) throw error;
+
+      // Converter dados para o formato do estado
+      const settingsData: any = {};
+      (data || []).forEach(setting => {
+        let value = setting.value;
+        
+        // Parse JSON values that were stored as strings
+        if (typeof value === 'string') {
+          try {
+            value = JSON.parse(value);
+          } catch (e) {
+            // If parsing fails, keep the original value
+            console.warn(`Failed to parse setting ${setting.key}:`, e);
+          }
+        }
+        
+        settingsData[setting.key] = value;
+      });
+
+      // Atualizar estado com configurações do banco
+      setSettings(prev => ({
+        ...prev,
+        site_name: settingsData.site_name || prev.site_name,
+        site_description: settingsData.site_description || prev.site_description,
+        contact_email: settingsData.contact_email || prev.contact_email,
+        contact_phone: settingsData.contact_phone || prev.contact_phone,
+        address: settingsData.address || prev.address,
+        allow_registration: settingsData.allow_registration ?? prev.allow_registration,
+        require_email_verification: settingsData.require_email_verification ?? prev.require_email_verification,
+        default_user_role: settingsData.default_user_role || prev.default_user_role,
+        max_file_size_mb: settingsData.max_file_size_mb || prev.max_file_size_mb,
+        supported_file_types: Array.isArray(settingsData.supported_file_types) 
+          ? settingsData.supported_file_types 
+          : prev.supported_file_types,
+        email_notifications: settingsData.email_notifications ?? prev.email_notifications,
+        sms_notifications: settingsData.sms_notifications ?? prev.sms_notifications,
+        maintenance_mode: settingsData.maintenance_mode ?? prev.maintenance_mode,
+        announcement_banner: settingsData.announcement_banner || prev.announcement_banner,
+        social_links: settingsData.social_links || prev.social_links
+      }));
+
     } catch (error) {
       console.error('Error fetching settings:', error);
+      showError(
+        'Error al cargar configuraciones',
+        'No se pudieron cargar las configuraciones del sistema.',
+        5000
+      );
     } finally {
       setIsLoading(false);
     }
@@ -120,16 +174,48 @@ const Settings = () => {
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      // En un sistema real, aquí guardaríamos en una tabla de configuraciones
-      // await supabase.from('system_settings').upsert(settings);
       
-      // Simular guardado
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Preparar dados para salvar
+      const settingsToSave = [
+        { key: 'site_name', value: JSON.stringify(settings.site_name) },
+        { key: 'site_description', value: JSON.stringify(settings.site_description) },
+        { key: 'contact_email', value: JSON.stringify(settings.contact_email) },
+        { key: 'contact_phone', value: JSON.stringify(settings.contact_phone) },
+        { key: 'address', value: JSON.stringify(settings.address) },
+        { key: 'allow_registration', value: JSON.stringify(settings.allow_registration) },
+        { key: 'require_email_verification', value: JSON.stringify(settings.require_email_verification) },
+        { key: 'default_user_role', value: JSON.stringify(settings.default_user_role) },
+        { key: 'max_file_size_mb', value: JSON.stringify(settings.max_file_size_mb) },
+        { key: 'supported_file_types', value: JSON.stringify(settings.supported_file_types) },
+        { key: 'email_notifications', value: JSON.stringify(settings.email_notifications) },
+        { key: 'sms_notifications', value: JSON.stringify(settings.sms_notifications) },
+        { key: 'maintenance_mode', value: JSON.stringify(settings.maintenance_mode) },
+        { key: 'announcement_banner', value: JSON.stringify(settings.announcement_banner) },
+        { key: 'social_links', value: JSON.stringify(settings.social_links) }
+      ];
+
+      // Salvar cada configuração usando a função do banco
+      for (const setting of settingsToSave) {
+        const { error } = await supabase.rpc('set_system_setting', {
+          setting_key: setting.key,
+          setting_value: setting.value
+        });
+
+        if (error) throw error;
+      }
       
-      alert('Configuración guardada exitosamente');
+      showSuccess(
+        'Configuración guardada',
+        'La configuración del sistema se ha guardado exitosamente.',
+        3000
+      );
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Error al guardar la configuración');
+      showError(
+        'Error al guardar',
+        'No se pudo guardar la configuración. Por favor, intente nuevamente.',
+        5000
+      );
     } finally {
       setIsSaving(false);
     }
@@ -547,6 +633,11 @@ const Settings = () => {
 
   return (
     <div className="space-y-6">
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">

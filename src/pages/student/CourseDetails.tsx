@@ -1,164 +1,246 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, FileText, Download, Play, Check, Clock } from 'lucide-react';
+import { ArrowLeft, BookOpen, FileText, Download, Play, Check, Clock, ExternalLink, Video, LinkIcon, LogOut, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
-import { API_URL } from '../../config/constants';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../config/supabase';
+import { useNotifications } from '../../hooks/useNotifications';
+import NotificationSystem from '../../components/NotificationSystem';
 
 interface Course {
-  id: number;
+  id: string;
   name: string;
   description: string;
-  professor: string;
+  teacher_name: string;
   credits: number;
-  enrolled: boolean;
-  image: string;
-  syllabus: string;
+  image_url: string;
+  syllabus_url?: string;
   modules: Module[];
 }
 
 interface Module {
-  id: number;
+  id: string;
   title: string;
   description: string;
+  order: number;
   lessons: Lesson[];
 }
 
 interface Lesson {
-  id: number;
+  id: string;
   title: string;
-  type: 'video' | 'document' | 'quiz';
-  duration: string;
+  description: string;
+  type: string;
+  content_url?: string;
+  duration?: string;
+  order: number;
   completed: boolean;
+  file_name?: string;
+  contents: LessonContent[];
+}
+
+interface LessonContent {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  content_url?: string;
+  file_name?: string;
+  file_size?: number;
+  file_type?: string;
+  order: number;
 }
 
 const CourseDetails = () => {
-  const { id } = useParams<{ id: string }>();
+  const { courseId } = useParams<{ courseId: string }>();
+  const { user } = useAuth();
+  const { notifications, addNotification, removeNotification } = useNotifications();
   const [course, setCourse] = useState<Course | null>(null);
-  const [activeModule, setActiveModule] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   useEffect(() => {
-    const fetchCourse = async () => {
-      try {
-        // Simulating API call - replace with actual call when backend is ready
-        // const response = await axios.get(`${API_URL}/courses/${id}`);
-        
-        // Mocking data for demonstration
-        const mockCourse: Course = {
-          id: 1,
-          name: 'Introducción a la Teología',
-          description: 'Este curso proporciona una introducción a los conceptos fundamentales de la teología cristiana, con énfasis en la comprensión de las doctrinas básicas de la fe y su relevancia para la vida y el ministerio. Se explorarán las fuentes teológicas, métodos y tradiciones históricas, con un enfoque en la perspectiva reformada.',
-          professor: 'Dr. Juan Pérez',
-          credits: 4,
-          enrolled: true,
-          image: 'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2',
-          syllabus: 'syllabus_teologia.pdf',
-          modules: [
-            {
-              id: 1,
-              title: 'Introducción a la disciplina teológica',
-              description: 'Conceptos básicos y metodología teológica',
-              lessons: [
-                { id: 1, title: 'Qué es la teología', type: 'video', duration: '45 min', completed: true },
-                { id: 2, title: 'Fuentes del conocimiento teológico', type: 'document', duration: '30 min', completed: true },
-                { id: 3, title: 'Metodología teológica', type: 'video', duration: '40 min', completed: false },
-              ]
-            },
-            {
-              id: 2,
-              title: 'La doctrina de la revelación',
-              description: 'Revelación general y especial',
-              lessons: [
-                { id: 4, title: 'Revelación general', type: 'video', duration: '35 min', completed: false },
-                { id: 5, title: 'Revelación especial', type: 'document', duration: '25 min', completed: false },
-                { id: 6, title: 'Evaluación del módulo', type: 'quiz', duration: '20 min', completed: false },
-              ]
-            },
-            {
-              id: 3,
-              title: 'La doctrina de Dios',
-              description: 'Atributos y naturaleza de Dios',
-              lessons: [
-                { id: 7, title: 'Los atributos de Dios', type: 'video', duration: '50 min', completed: false },
-                { id: 8, title: 'La Trinidad', type: 'video', duration: '45 min', completed: false },
-                { id: 9, title: 'Lectura: Conociendo a Dios', type: 'document', duration: '60 min', completed: false },
-                { id: 10, title: 'Evaluación del módulo', type: 'quiz', duration: '30 min', completed: false },
-              ]
-            }
-          ]
-        };
-        
-        setCourse(mockCourse);
-        if (mockCourse.modules.length > 0) {
-          setActiveModule(mockCourse.modules[0].id);
-        }
-      } catch (error) {
-        console.error('Error fetching course details:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchCourse();
-  }, [id]);
+    if (courseId && user) {
+      fetchCourseDetails();
+      fetchCompletedLessons();
+    }
+  }, [courseId, user]);
 
-  const calculateProgress = () => {
-    if (!course) return 0;
-    
-    const totalLessons = course.modules.reduce((sum, module) => sum + module.lessons.length, 0);
-    const completedLessons = course.modules.reduce((sum, module) => 
-      sum + module.lessons.filter(lesson => lesson.completed).length, 0
-    );
-    
-    return Math.round((completedLessons / totalLessons) * 100);
-  };
+  const fetchCourseDetails = async () => {
+    try {
+      const { data: courseData, error: courseError } = await supabase
+        .from('courses')
+        .select(`
+          *,
+          users!courses_teacher_id_fkey(name)
+        `)
+        .eq('id', courseId)
+        .single();
 
-  const renderLessonIcon = (type: string) => {
-    switch (type) {
-      case 'video':
-        return <Play size={16} className="text-sky-600 dark:text-sky-400" />;
-      case 'document':
-        return <FileText size={16} className="text-emerald-600 dark:text-emerald-400" />;
-      case 'quiz':
-        return <FileText size={16} className="text-amber-600 dark:text-amber-400" />;
-      default:
-        return <FileText size={16} />;
+      if (courseError) throw courseError;
+
+      const { data: modulesData, error: modulesError } = await supabase
+        .from('modules')
+        .select(`
+          *,
+          lessons(
+            *,
+            lesson_contents(*)
+          )
+        `)
+        .eq('course_id', courseId)
+        .order('order');
+
+      if (modulesError) throw modulesError;
+
+      const courseWithModules = {
+        ...courseData,
+        teacher_name: courseData.users?.name || 'Profesor desconocido',
+        modules: modulesData.map(module => ({
+          ...module,
+          lessons: module.lessons
+            .sort((a: any, b: any) => a.order - b.order)
+            .map((lesson: any) => ({
+              ...lesson,
+              completed: false,
+              contents: lesson.lesson_contents?.sort((a: any, b: any) => a.order - b.order) || []
+            }))
+        }))
+      };
+
+      setCourse(courseWithModules);
+    } catch (error) {
+      console.error('Error fetching course details:', error);
+      addNotification('Error al cargar los detalles del curso', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (isLoading) {
+  const fetchCompletedLessons = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('completed_lessons')
+        .select('lesson_id')
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      setCompletedLessons(new Set(data.map(item => item.lesson_id)));
+    } catch (error) {
+      console.error('Error fetching completed lessons:', error);
+    }
+  };
+
+  const markLessonComplete = async (lessonId: string) => {
+    try {
+      const { error } = await supabase
+        .from('completed_lessons')
+        .upsert({
+          user_id: user?.id,
+          lesson_id: lessonId,
+          completed_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      addNotification('Lección marcada como completada', 'success');
+    } catch (error) {
+      console.error('Error marking lesson as complete:', error);
+    }
+  };
+
+  const handleWithdrawFromCourse = async () => {
+    if (!user?.id || !courseId) return;
+    
+    try {
+      setIsWithdrawing(true);
+      
+      // Actualizar la matrícula a inactiva
+      const { error } = await supabase
+        .from('enrollments')
+        .update({ 
+          is_active: false,
+          status: 'Desistido',
+          observations: `Desistió del curso. Motivo: ${withdrawReason}`,
+          completion_date: new Date().toISOString()
+        })
+        .eq('user_id', user.id)
+        .eq('course_id', courseId);
+
+      if (error) throw error;
+      
+      addNotification('Has desistido del curso correctamente', 'success');
+      setTimeout(() => {
+        window.location.href = '/student/courses';
+      }, 2000);
+    } catch (error) {
+      console.error('Error al desistir del curso:', error);
+      addNotification('Error al desistir del curso', 'error');
+    } finally {
+      setIsWithdrawing(false);
+      setShowWithdrawModal(false);
+    }
+  };
+
+  const calculateProgress = () => {
+    if (!course) return 0;
+    const totalLessons = course.modules.reduce((acc, module) => acc + module.lessons.length, 0);
+    if (totalLessons === 0) return 0;
+    return Math.round((completedLessons.size / totalLessons) * 100);
+  };
+
+  const getContentIcon = (type: string) => {
+    switch (type) {
+      case 'video':
+        return <Video size={16} className="text-red-500" />;
+      case 'document':
+        return <FileText size={16} className="text-blue-500" />;
+      case 'link':
+        return <LinkIcon size={16} className="text-green-500" />;
+      case 'lesson':
+        return <BookOpen size={16} className="text-purple-500" />;
+      default:
+        return <FileText size={16} className="text-gray-500" />;
+    }
+  };
+
+  const handleContentClick = (content: LessonContent) => {
+    if (content.content_url) {
+      if (content.type === 'link') {
+        window.open(content.content_url, '_blank');
+      } else {
+        window.open(content.content_url, '_blank');
+      }
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-[calc(100vh-16rem)] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-sky-500"></div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
       </div>
     );
   }
 
   if (!course) {
     return (
-      <div className="min-h-[calc(100vh-16rem)] flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-2">
-            Curso no encontrado
-          </h2>
-          <p className="text-slate-600 dark:text-slate-400 mb-4">
-            El curso que estás buscando no existe o no tienes acceso a él.
-          </p>
-          <Link
-            to="/student/courses"
-            className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
-          >
-            <ArrowLeft size={16} className="mr-2" />
-            Volver a la lista de cursos
-          </Link>
-        </div>
+      <div className="text-center py-8">
+        <p className="text-slate-600 dark:text-slate-400">Curso no encontrado</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
       <div className="flex items-center mb-6">
         <Link
           to="/student/courses"
@@ -176,13 +258,13 @@ const CourseDetails = () => {
       <div className="relative h-64 rounded-xl overflow-hidden">
         <div 
           className="absolute inset-0 bg-cover bg-center" 
-          style={{ backgroundImage: `url(${course.image})` }}
+          style={{ backgroundImage: `url(${course.image_url})` }}
         ></div>
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
         <div className="absolute bottom-0 left-0 p-6 text-white">
           <h2 className="text-2xl font-bold mb-2">{course.name}</h2>
           <div className="flex items-center">
-            <p className="mr-4">Profesor: {course.professor}</p>
+            <p className="mr-4">Profesor: {course.teacher_name}</p>
             <p>Créditos: {course.credits}</p>
           </div>
         </div>
@@ -199,19 +281,45 @@ const CourseDetails = () => {
         </div>
         <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-4">
           <div 
-            className="h-full bg-sky-500 rounded-full" 
+            className="h-full bg-sky-500 rounded-full transition-all duration-300" 
             style={{ width: `${calculateProgress()}%` }}
           ></div>
         </div>
         <div className="flex justify-between">
-          <a 
-            href="#" 
-            className="inline-flex items-center text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+          {course.syllabus_url && (
+            <a 
+              href={course.syllabus_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+            >
+              <Download size={16} className="mr-1" />
+              Descargar programa
+            </a>
+          )}
+          <button
+            onClick={() => setShowWithdrawModal(true)}
+            className="inline-flex items-center text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
           >
-            <Download size={16} className="mr-1" />
-            Descargar programa
-          </a>
-          <button className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition">
+            <LogOut size={16} className="mr-1" />
+            Desistir del curso
+          </button>
+          <button 
+            onClick={() => {
+              const firstIncompleteLesson = course.modules
+                .flatMap(m => m.lessons)
+                .find(l => !completedLessons.has(l.id));
+              if (firstIncompleteLesson) {
+                const moduleWithLesson = course.modules.find(m => 
+                  m.lessons.some(l => l.id === firstIncompleteLesson.id)
+                );
+                if (moduleWithLesson) {
+                  setActiveModule(moduleWithLesson.id);
+                }
+              }
+            }}
+            className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
+          >
             <BookOpen size={16} className="mr-2" />
             Continuar aprendiendo
           </button>
@@ -241,86 +349,152 @@ const CourseDetails = () => {
             <div key={module.id} className="border-b border-slate-200 dark:border-slate-700 last:border-0">
               <button
                 onClick={() => setActiveModule(activeModule === module.id ? null : module.id)}
-                className="w-full flex justify-between items-center p-6 text-left hover:bg-slate-50 dark:hover:bg-slate-750 transition"
+                className="w-full px-6 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-700 transition"
               >
-                <div>
-                  <h4 className="font-medium text-slate-800 dark:text-white">
-                    {module.title}
-                  </h4>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    {module.description}
-                  </p>
-                </div>
-                <div className="flex items-center">
-                  <span className="text-sm text-slate-500 dark:text-slate-400 mr-3">
-                    {module.lessons.length} lecciones
-                  </span>
-                  <svg
-                    className={`h-5 w-5 text-slate-500 transform transition-transform ${
-                      activeModule === module.id ? 'rotate-180' : ''
-                    }`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium text-slate-800 dark:text-white">
+                      {module.title}
+                    </h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                      {module.description}
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-sm text-slate-500 dark:text-slate-400 mr-2">
+                      {module.lessons.filter(l => completedLessons.has(l.id)).length}/{module.lessons.length}
+                    </span>
+                    <motion.div
+                      animate={{ rotate: activeModule === module.id ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ArrowLeft size={16} className="transform rotate-90" />
+                    </motion.div>
+                  </div>
                 </div>
               </button>
               
               {activeModule === module.id && (
-                <div className="px-6 pb-6">
-                  <ul className="space-y-3">
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-6 pb-4">
                     {module.lessons.map((lesson) => (
-                      <li key={lesson.id}>
-                        <div className="flex items-center p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-750 transition cursor-pointer">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mr-3">
-                            {lesson.completed ? (
-                              <Check size={16} className="text-green-600 dark:text-green-400" />
-                            ) : (
-                              renderLessonIcon(lesson.type)
+                      <div key={lesson.id} className="ml-4 border-l-2 border-slate-200 dark:border-slate-600 pl-4 pb-4 last:pb-0">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center mb-2">
+                              {completedLessons.has(lesson.id) ? (
+                                <Check size={16} className="text-green-500 mr-2" />
+                              ) : (
+                                <Clock size={16} className="text-slate-400 mr-2" />
+                              )}
+                              <h5 className="font-medium text-slate-800 dark:text-white">
+                                {lesson.title}
+                              </h5>
+                              {lesson.duration && (
+                                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                                  {lesson.duration}
+                                </span>
+                              )}
+                            </div>
+                            {lesson.description && (
+                              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                                {lesson.description}
+                              </p>
+                            )}
+                            
+                            {/* Lesson Contents */}
+                            {lesson.contents && lesson.contents.length > 0 && (
+                              <div className="space-y-2 mb-3">
+                                {lesson.contents.map((content) => (
+                                  <div
+                                    key={content.id}
+                                    className="flex items-center p-2 bg-slate-50 dark:bg-slate-700 rounded-md cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition"
+                                    onClick={() => handleContentClick(content)}
+                                  >
+                                    {getContentIcon(content.type)}
+                                    <span className="ml-2 text-sm text-slate-700 dark:text-slate-300">
+                                      {content.title}
+                                    </span>
+                                    {content.type === 'link' && (
+                                      <ExternalLink size={12} className="ml-auto text-slate-400" />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <div className="flex-grow">
-                            <h5 className="font-medium text-slate-800 dark:text-white">
-                              {lesson.title}
-                            </h5>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center mt-1">
-                              <span className="capitalize mr-2">
-                                {lesson.type === 'video' ? 'Video' : 
-                                 lesson.type === 'document' ? 'Lectura' : 'Evaluación'}
-                              </span>
-                              <Clock size={12} className="mr-1" />
-                              {lesson.duration}
-                            </p>
-                          </div>
-                          <div>
-                            {lesson.completed ? (
-                              <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                                Completado
-                              </span>
-                            ) : (
-                              <button className="text-sm text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300">
-                                {lesson.type === 'video' ? 'Ver' : 
-                                 lesson.type === 'document' ? 'Leer' : 'Iniciar'}
+                          
+                          <div className="flex items-center ml-4">
+                            {!completedLessons.has(lesson.id) && (
+                              <button
+                                onClick={() => markLessonComplete(lesson.id)}
+                                className="px-3 py-1 text-xs bg-sky-600 text-white rounded hover:bg-sky-700 transition"
+                              >
+                                Marcar como completada
                               </button>
                             )}
                           </div>
                         </div>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
-                </div>
+                  </div>
+                </motion.div>
               )}
             </div>
           ))}
         </div>
       </div>
+      
+      {/* Modal de desistencia */}
+      {showWithdrawModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center text-red-600 dark:text-red-400 mb-4">
+              <AlertTriangle className="w-6 h-6 mr-2" />
+              <h3 className="text-lg font-semibold">Desistir del curso</h3>
+            </div>
+            
+            <p className="text-slate-600 dark:text-slate-400 mb-4">
+              Estás a punto de desistir del curso <strong>{course.name}</strong>. Esta acción quedará registrada en tu historial académico.
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Motivo de la desistencia
+              </label>
+              <textarea
+                value={withdrawReason}
+                onChange={(e) => setWithdrawReason(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                placeholder="Por favor, explica brevemente por qué desistes del curso..."
+              />
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowWithdrawModal(false)}
+                className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleWithdrawFromCourse}
+                disabled={isWithdrawing || !withdrawReason.trim()}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {isWithdrawing ? 'Procesando...' : 'Confirmar desistencia'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, BookOpen, Bell, User, PlusCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { adminService } from '../../services/api';
+import { supabase } from '../../config/supabase';
 import { motion } from 'framer-motion';
 
 interface StatsData {
@@ -33,35 +33,129 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        try {
-          const statsData = await adminService.getSystemStats();
-          setStats({
-            ...statsData,
-            recentAnnouncements: 3 // Mock for now
-          });
-        } catch (statsError) {
-          console.error('Error fetching stats:', statsError);
-          // Use mock data if API fails
-          setStats({
-            totalStudents: 0,
-            totalTeachers: 0,
-            totalCourses: 0,
-            recentAnnouncements: 0
-          });
-        }
+        // Buscar estatísticas do sistema
+        const [usersResult, coursesResult, announcementsResult] = await Promise.all([
+          supabase.from('users').select('id, role', { count: 'exact' }),
+          supabase.from('courses').select('id', { count: 'exact' }).eq('is_active', true),
+          supabase.from('announcements').select('id', { count: 'exact' })
+        ]);
+
+        // Contar usuários por role
+        const users = usersResult.data || [];
+        const totalStudents = users.filter(user => user.role?.includes('student')).length;
+        const totalTeachers = users.filter(user => user.role?.includes('teacher')).length;
+        const totalCourses = coursesResult.count || 0;
+        const recentAnnouncements = announcementsResult.count || 0;
+
+        setStats({
+          totalStudents,
+          totalTeachers,
+          totalCourses,
+          recentAnnouncements
+        });
         
-        // Mock activities for now
-        const mockActivities = [
-          { id: 1, type: 'enrollment', description: 'Nuevo estudiante inscrito en Teología Sistemática I', date: '2025-06-28T14:30:00' },
-          { id: 2, type: 'announcement', description: 'Anuncio publicado: Fechas de exámenes finales', date: '2025-06-27T10:15:00' },
-          { id: 3, type: 'user', description: 'Nuevo profesor registrado: Dr. Roberto Sánchez', date: '2025-06-26T16:45:00' },
-          { id: 4, type: 'course', description: 'Nuevo curso creado: Historia de la Iglesia II', date: '2025-06-25T09:20:00' },
-          { id: 5, type: 'announcement', description: 'Anuncio publicado: Conferencia especial', date: '2025-06-24T13:10:00' },
-        ];
+        // Buscar atividades recentes reais
+        const [recentEnrollments, fetchedAnnouncementsResult, recentUsers, recentCourses] = await Promise.all([
+          supabase
+            .from('enrollments')
+            .select(`
+              id,
+              enrollment_date,
+              course:courses(name),
+              user:users(name, first_name, last_name)
+            `)
+            .order('enrollment_date', { ascending: false })
+            .limit(2),
+          
+          supabase
+            .from('announcements')
+            .select('id, title, created_at')
+            .order('created_at', { ascending: false })
+            .limit(2),
+          
+          supabase
+            .from('users')
+            .select('id, name, first_name, last_name, created_at, role')
+            .order('created_at', { ascending: false })
+            .limit(2),
+          
+          supabase
+            .from('courses')
+            .select('id, name, created_at')
+            .order('created_at', { ascending: false })
+            .limit(2)
+        ]);
+
+        // Processar atividades recentes
+        const activities = [];
+        let activityId = 1;
+
+        // Adicionar matrículas recentes
+        (recentEnrollments.data || []).forEach(enrollment => {
+          const userName = enrollment.user?.name || 
+                          `${enrollment.user?.first_name || ''} ${enrollment.user?.last_name || ''}`.trim() || 
+                          'Usuario';
+          const courseName = enrollment.course?.name || 'Curso';
+          
+          activities.push({
+            id: activityId++,
+            type: 'enrollment',
+            description: `${userName} se inscribió en ${courseName}`,
+            date: enrollment.enrollment_date
+          });
+        });
+
+        // Adicionar anúncios recentes
+        (fetchedAnnouncementsResult.data || []).forEach(announcement => {
+          activities.push({
+            id: activityId++,
+            type: 'announcement',
+            description: `Anuncio publicado: ${announcement.title}`,
+            date: announcement.created_at
+          });
+        });
+
+        // Adicionar usuários recentes
+        (recentUsers.data || []).forEach(user => {
+          const userName = user.name || 
+                          `${user.first_name || ''} ${user.last_name || ''}`.trim() || 
+                          'Usuario';
+          const userRole = user.role?.includes('teacher') ? 'profesor' : 
+                          user.role?.includes('admin') ? 'administrador' : 'estudiante';
+          
+          activities.push({
+            id: activityId++,
+            type: 'user',
+            description: `Nuevo ${userRole} registrado: ${userName}`,
+            date: user.created_at
+          });
+        });
+
+        // Adicionar cursos recentes
+        (recentCourses.data || []).forEach(course => {
+          activities.push({
+            id: activityId++,
+            type: 'course',
+            description: `Nuevo curso creado: ${course.name}`,
+            date: course.created_at
+          });
+        });
+
+        // Ordenar atividades por data (mais recentes primeiro)
+        activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         
-        setRecentActivities(mockActivities);
+        setRecentActivities(activities.slice(0, 5)); // Mostrar apenas as 5 mais recentes
+        
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        // Em caso de erro, definir valores padrão
+        setStats({
+          totalStudents: 0,
+          totalTeachers: 0,
+          totalCourses: 0,
+          recentAnnouncements: 0
+        });
+        setRecentActivities([]);
       } finally {
         setIsLoading(false);
       }

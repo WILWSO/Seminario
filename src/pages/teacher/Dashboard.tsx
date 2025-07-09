@@ -1,385 +1,390 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { BookOpen, Users, FileText, Calendar, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { motion } from 'framer-motion';
+import { BookOpen, Users, FileText, TrendingUp, Calendar, Bell, Plus, Eye, Edit, BarChart3 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Course {
   id: string;
   name: string;
   description: string;
-  students_count: number;
-  modules_count: number;
-  lessons_count: number;
+  credits: number;
   is_active: boolean;
+  enrollment_open: boolean;
+  period: string;
+  created_at: string;
+  enrollments: { count: number }[];
+  modules: { count: number }[];
+  assignments: { count: number }[];
 }
 
 interface Assignment {
   id: string;
   title: string;
-  course_name: string;
   due_date: string;
-  pending_grades: number;
-  course_id: string;
+  course: {
+    name: string;
+  };
+  assignment_submissions: { count: number }[];
 }
 
-interface TeacherStats {
-  totalCourses: number;
-  totalStudents: number;
-  pendingGrades: number;
-  activeCourses: number;
+interface RecentActivity {
+  id: string;
+  type: 'enrollment' | 'submission' | 'completion';
+  mensaje: string;
+  timestamp: string;
+  course_name?: string;
+  student_name?: string;
 }
 
-const TeacherDashboard = () => {
+const TeacherDashboard: React.FC = () => {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
-  const [upcomingAssignments, setUpcomingAssignments] = useState<Assignment[]>([]);
-  const [stats, setStats] = useState<TeacherStats>({
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [stats, setStats] = useState({
     totalCourses: 0,
     totalStudents: 0,
-    pendingGrades: 0,
-    activeCourses: 0
+    activeAssignments: 0,
+    pendingGrades: 0
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.id) {
-      fetchTeacherData();
+    if (user) {
+      fetchDashboardData();
     }
-  }, [user?.id]);
+  }, [user]);
 
-  const fetchTeacherData = async () => {
+  const fetchDashboardData = async () => {
     try {
-      setIsLoading(true);
+      setLoading(true);
 
-      // Fetch courses taught by this teacher
+      // Fetch courses with enrollment counts
       const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
         .select(`
           *,
           enrollments(count),
-          modules(
-            id,
-            lessons(id)
-          )
+          modules(count),
+          assignments(count)
         `)
         .eq('teacher_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (coursesError) throw coursesError;
 
-      // Transform courses data
-      const transformedCourses = (coursesData || []).map(course => ({
-        id: course.id,
-        name: course.name,
-        description: course.description || '',
-        students_count: course.enrollments?.length || 0,
-        modules_count: course.modules?.length || 0,
-        lessons_count: course.modules?.reduce((total: number, module: any) => 
-          total + (module.lessons?.length || 0), 0) || 0,
-        is_active: course.is_active
-      }));
+      // Fetch recent assignments
+      const { data: assignmentsData, error: assignmentsError } = await supabase
+        .from('assignments')
+        .select(`
+          *,
+          course:courses(name),
+          assignment_submissions(count)
+        `)
+        .in('course_id', coursesData?.map(c => c.id) || [])
+        .order('created_at', { ascending: false })
+        .limit(5);
 
-      setCourses(transformedCourses);
-
-      // Fetch assignments for teacher's courses
-      const courseIds = transformedCourses.map(course => course.id);
-      
-      if (courseIds.length > 0) {
-        const { data: assignmentsData, error: assignmentsError } = await supabase
-          .from('assignments')
-          .select(`
-            *,
-            course:courses(name),
-            grades(count)
-          `)
-          .in('course_id', courseIds)
-          .gte('due_date', new Date().toISOString())
-          .order('due_date', { ascending: true })
-          .limit(5);
-
-        if (assignmentsError) throw assignmentsError;
-
-        // Transform assignments data
-        const transformedAssignments = (assignmentsData || []).map(assignment => ({
-          id: assignment.id,
-          title: assignment.title,
-          course_name: assignment.course?.name || 'Curso desconocido',
-          due_date: assignment.due_date,
-          pending_grades: Math.max(0, (transformedCourses.find(c => c.id === assignment.course_id)?.students_count || 0) - (assignment.grades?.length || 0)),
-          course_id: assignment.course_id
-        }));
-
-        setUpcomingAssignments(transformedAssignments);
-      }
+      if (assignmentsError) throw assignmentsError;
 
       // Calculate stats
-      const totalStudents = transformedCourses.reduce((sum, course) => sum + course.students_count, 0);
-      const activeCourses = transformedCourses.filter(course => course.is_active).length;
-      const pendingGrades = upcomingAssignments.reduce((sum, assignment) => sum + assignment.pending_grades, 0);
+      const totalStudents = coursesData?.reduce((sum, course) => 
+        sum + (course.enrollments?.[0]?.count || 0), 0) || 0;
+      
+      const activeAssignments = assignmentsData?.filter(a => 
+        new Date(a.due_date) > new Date()).length || 0;
 
+      // Fetch pending grades count
+      const { count: pendingGrades } = await supabase
+        .from('assignment_submissions')
+        .select('*', { count: 'exact', head: true })
+        .is('grade', null)
+        .in('assignment_id', assignmentsData?.map(a => a.id) || []);
+
+      setCourses(coursesData || []);
+      setAssignments(assignmentsData || []);
       setStats({
-        totalCourses: transformedCourses.length,
+        totalCourses: coursesData?.length || 0,
         totalStudents,
-        pendingGrades,
-        activeCourses
+        activeAssignments,
+        pendingGrades: pendingGrades || 0
       });
 
+      // Generate recent activity (simplified)
+      const activities: RecentActivity[] = [
+        {
+          id: '1',
+          type: 'enrollment',
+          mensaje: 'Nuevo estudiante matriculado en el curso',
+          timestamp: new Date().toISOString(),
+          course_name: coursesData?.[0]?.name
+        },
+        {
+          id: '2',
+          type: 'submission',
+          mensaje: 'Evaluación entregada',
+          timestamp: new Date(Date.now() - 3600000).toISOString(),
+          course_name: coursesData?.[0]?.name
+        }
+      ];
+      setRecentActivity(activities);
+
     } catch (error) {
-      console.error('Error fetching teacher data:', error);
+      console.error('Error fetching dashboard data:', error);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  if (isLoading) {
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'enrollment': return <Users className="w-4 h-4 text-blue-500" />;
+      case 'submission': return <FileText className="w-4 h-4 text-green-500" />;
+      case 'completion': return <TrendingUp className="w-4 h-4 text-purple-500" />;
+      default: return <Bell className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-[calc(100vh-16rem)] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-sky-500"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-            Bienvenido, Profesor {user?.name || `${user?.first_name} ${user?.last_name}`}
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            Este es su panel de profesor. Aquí puede administrar sus cursos y calificaciones.
-          </p>
-        </div>
-        <div className="mt-4 md:mt-0">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Panel de Profesor</h1>
+            <p className="text-gray-600 mt-2">¡Bienvenido de nuevo! Aquí está lo que sucede con tus cursos.</p>
+          </div>
           <Link
             to="/teacher/courses"
-            className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            <BookOpen size={18} className="mr-2" />
-            Administrar cursos
+            <BookOpen className="w-5 h-5" />
+            Administrar Cursos
           </Link>
         </div>
-      </div>
-      
-      {/* Upcoming Assignments */}
-      {upcomingAssignments.length > 0 && (
-        <div>
-          <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">
-            Próximas evaluaciones
-          </h2>
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-              <thead className="bg-slate-50 dark:bg-slate-750">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Evaluación
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Curso
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Fecha límite
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Pendientes
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Acción
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                {upcomingAssignments.map((assignment) => (
-                  <tr key={assignment.id} className="hover:bg-slate-50 dark:hover:bg-slate-750 transition">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-white">
-                      {assignment.title}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                      {assignment.course_name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-400">
-                      <div className="flex items-center">
-                        <Calendar size={16} className="mr-2 text-amber-500" />
-                        {new Date(assignment.due_date).toLocaleDateString('es-AR')}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                        {assignment.pending_grades} pendientes
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Link
-                        to={`/teacher/grades?course=${assignment.course_id}&assignment=${assignment.id}`}
-                        className="text-sky-600 hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300"
-                      >
-                        Calificar
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total de Cursos</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.totalCourses}</p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <BookOpen className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total de Estudiantes</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.totalStudents}</p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <Users className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Evaluaciones Activas</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.activeAssignments}</p>
+              </div>
+              <div className="p-3 bg-purple-100 rounded-lg">
+                <FileText className="w-6 h-6 text-purple-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Calificaciones Pendientes</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.pendingGrades}</p>
+              </div>
+              <div className="p-3 bg-orange-100 rounded-lg">
+                <BarChart3 className="w-6 h-6 text-orange-600" />
+              </div>
+            </div>
           </div>
         </div>
-      )}
-      
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <motion.div 
-          whileHover={{ y: -5 }}
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
-        >
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-sky-100 dark:bg-sky-900 rounded-full flex items-center justify-center">
-              <BookOpen className="text-sky-600 dark:text-sky-400" />
-            </div>
-            <div className="ml-4">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Cursos totales
-              </h3>
-              <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {stats.totalCourses}
-              </p>
-            </div>
-          </div>
-        </motion.div>
-        
-        <motion.div 
-          whileHover={{ y: -5 }}
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
-        >
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900 rounded-full flex items-center justify-center">
-              <TrendingUp className="text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div className="ml-4">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Cursos totales
-              </h3>
-              <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {stats.totalCourses}
-              </p>
-            </div>
-          </div>
-        </motion.div>
-        
-        <motion.div 
-          whileHover={{ y: -5 }}
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
-        >
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900 rounded-full flex items-center justify-center">
-              <TrendingUp className="text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div className="ml-4">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Cursos activos
-              </h3>
-              <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {stats.activeCourses}
-              </p>
-            </div>
-          </div>
-        </motion.div>
-        
-        <motion.div 
-          whileHover={{ y: -5 }}
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
-        >
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center">
-              <Users className="text-purple-600 dark:text-purple-400" />
-            </div>
-            <div className="ml-4">
-              <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Total de estudiantes
-              </h3>
-              <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {stats.totalStudents}
-              </p>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-      
-      {/* Courses Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">
-          Mis cursos
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course) => (
-            <motion.div
-              key={course.id}
-              whileHover={{ y: -5 }}
-              className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden"
-            >
-              <div className="h-3 bg-gradient-to-r from-sky-500 to-blue-600"></div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Courses Overview */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <p className="text-gray-600 mb-4">Contacta al administrador para que te asigne cursos</p>
+                  <Link to="/teacher/courses" className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Ver Cursos
+                  </Link>
+                </div>
+              </div>
               <div className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white">
-                    {course.name}
-                  </h3>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    course.is_active 
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                      : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                  }`}>
-                    {course.is_active ? 'Activo' : 'Inactivo'}
-                  </span>
-                </div>
-                
-                <p className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
-                  {course.description}
-                </p>
-                
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-slate-600 dark:text-slate-400 text-sm">
-                    <Users size={16} className="mr-2" />
-                    <span>{course.students_count} estudiantes</span>
+                {courses.length === 0 ? (
+                  <div className="text-center py-12">
+                    <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Aún no hay cursos</h3>
+                    <p className="text-gray-600 mb-4">Crea tu primer curso para comenzar</p>
+                    <button className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Crear Curso
+                    </button>
                   </div>
-                  <div className="flex items-center text-slate-600 dark:text-slate-400 text-sm">
-                    <BookOpen size={16} className="mr-2" />
-                    <span>{course.modules_count} módulos, {course.lessons_count} lecciones</span>
+                ) : (
+                  <div className="space-y-4">
+                    {courses.map((course) => (
+                      <div key={course.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="font-semibold text-gray-900">{course.name}</h3>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                course.is_active 
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {course.is_active ? 'Activo' : 'Inactivo'}
+                              </span>
+                              {course.enrollment_open && (
+                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                                  Matrícula Abierta
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-gray-600 text-sm mb-3">{course.description}</p>
+                            <div className="flex items-center gap-6 text-sm text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <Users className="w-4 h-4" />
+                                {course.enrollments?.[0]?.count || 0} estudiantes
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <BookOpen className="w-4 h-4" />
+                                {course.modules?.[0]?.count || 0} módulos
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <FileText className="w-4 h-4" />
+                                {course.assignments?.[0]?.count || 0} evaluaciones
+                              </span>
+                              {course.period && (
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-4 h-4" />
+                                  {course.period}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 ml-4">
+                            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                
-                <div className="flex space-x-2">
-                  <Link
-                    to={`/teacher/courses/${course.id}`}
-                    className="flex-1 inline-flex items-center justify-center px-3 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition text-sm"
-                  >
-                    <BookOpen size={14} className="mr-1" />
-                    Administrar
-                  </Link>
-                  <Link
-                    to={`/teacher/grades?course=${course.id}`}
-                    className="flex-1 inline-flex items-center justify-center px-3 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition text-sm"
-                  >
-                    <FileText size={14} className="mr-1" />
-                    Calificaciones
-                  </Link>
-                </div>
+                )}
               </div>
-            </motion.div>
-          ))}
-          
-          {courses.length === 0 && (
-            <div className="col-span-full text-center py-12">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
-                <BookOpen size={24} className="text-slate-400" />
-              </div>
-              <h3 className="text-lg font-medium text-slate-800 dark:text-white mb-1">
-                No hay cursos asignados
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400">
-                Contacte al administrador para que le asigne cursos.
-              </p>
             </div>
-          )}
+          </div>
+
+          {/* Recent Activity & Assignments */}
+          <div className="space-y-8">
+            {/* Recent Assignments */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-xl font-semibold text-gray-900">Evaluaciones Recientes</h2>
+              </div>
+              <div className="p-6">
+                {assignments.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">Aún no hay evaluaciones</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {assignments.map((assignment) => (
+                      <div key={assignment.id} className="border-l-4 border-blue-500 pl-4">
+                        <h4 className="font-medium text-gray-900">{assignment.title}</h4>
+                        <p className="text-sm text-gray-600">{assignment.course.name}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-500">
+                            Fecha límite: {formatDate(assignment.due_date)}
+                          </span>
+                          <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                            {assignment.assignment_submissions?.[0]?.count || 0} entregas
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-xl font-semibold text-gray-900">Actividad Reciente</h2>
+              </div>
+              <div className="p-6">
+                {recentActivity.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Bell className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">No hay actividad reciente</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {recentActivity.map((activity) => (
+                      <div key={activity.id} className="flex items-start gap-3">
+                        <div className="flex-shrink-0 mt-1">
+                          <div className="p-1 bg-gray-100 rounded-full">
+                            {getActivityIcon(activity.type)}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900">{activity.mensaje}</p>
+                          {activity.course_name && (
+                            <p className="text-xs text-gray-600">{activity.course_name}</p>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">
+                            {formatDate(activity.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

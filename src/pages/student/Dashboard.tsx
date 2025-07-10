@@ -8,11 +8,10 @@ import { motion } from 'framer-motion';
 interface Course {
   id: string;
   name: string;
-  period?: string;
+  period?: string  | null;
   description: string;
   progress: number;
   teacher_name: string;
-  period: string | null;
   image_url?: string;
 }
 
@@ -202,6 +201,7 @@ const StudentDashboard = () => {
                 Filtrar por período
               </label>
               <select
+                title='Filtrar por período'
                 value={selectedPeriod}
                 onChange={(e) => setSelectedPeriod(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"

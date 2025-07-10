@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Settings as SettingsIcon, Database, Mail, Shield, Globe, Bell, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 interface SystemSettings {
   site_name: string;
@@ -29,7 +28,7 @@ interface SystemSettings {
 }
 
 const Settings = () => {
-  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [settings, setSettings] = useState<SystemSettings>({
     site_name: 'SEMBRAR',
     site_description: 'Seminário Bíblico Reformado da Argentina',
@@ -633,10 +632,7 @@ const Settings = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+      {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>

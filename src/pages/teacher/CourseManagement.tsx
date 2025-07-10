@@ -259,7 +259,7 @@ const CourseManagement = () => {
       `;
       document.body.appendChild(notification);
       
-      // Remover notificação após 3 segundos
+      // Remover notificação após 5 segundos
       setTimeout(() => {
         notification.style.opacity = '0';
         notification.style.transform = 'translateX(100%)';
@@ -268,7 +268,7 @@ const CourseManagement = () => {
             document.body.removeChild(notification);
           }
         }, 300);
-      }, 3000);
+      }, 5000);
       
     } catch (error) {
       console.error('Error saving lesson:', error);

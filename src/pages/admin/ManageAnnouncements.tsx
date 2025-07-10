@@ -1,13 +1,13 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useRef } from 'react';
 import { Bell, Plus, Edit, Trash, ArrowLeft, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
+import { useNotifications } from '../../contexts/NotificationContext';
 import NotificationSystem from '../../components/NotificationSystem';
 
 interface Announcement {
-  id: number;
+  id: string;
   title: string;
   content: string;
   created_at: string;
@@ -16,15 +16,19 @@ interface Announcement {
 
 const ManageAnnouncements = () => {
   const { user } = useAuth();
-  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, userId?: string }>({ open: false }); // For delete confirmation dialog
   const [formData, setFormData] = useState({
     title: '',
     content: ''
   });
+
+  // Reference for the title input to focus it when creating a new announcement
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -41,13 +45,13 @@ const ManageAnnouncements = () => {
         if (error) throw error;
 
         setAnnouncements((data || []).map((ann: any) => ({
-          id: parseInt(ann.id),
+          id: ann.id,
           title: ann.title,
           content: ann.content,
           created_at: ann.created_at,
-          author: ann.author?.name || 
-                 `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() || 
-                 'Admin'
+          author: ann.author?.name ||
+            `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() ||
+            'Admin'
         })));
       } catch (error) {
         console.error('Error fetching announcements:', error);
@@ -61,7 +65,7 @@ const ManageAnnouncements = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchAnnouncements();
   }, [user?.id]);
 
@@ -72,12 +76,12 @@ const ManageAnnouncements = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    if (!user?.id) return;
-    
+
+    if (!user?.id) return; // Ensure user is authenticated
+
     try {
       setIsLoading(true);
-      
+
       if (editingId) {
         const { error } = await supabase
           .from('announcements')
@@ -90,24 +94,24 @@ const ManageAnnouncements = () => {
 
         if (error) throw error;
 
-        setAnnouncements(prev => 
-          prev.map(item => 
-            item.id === editingId 
-              ? { 
-                  ...item, 
-                  title: formData.title, 
-                  content: formData.content 
-                } 
+        setAnnouncements(prev =>
+          prev.map(item =>
+            item.id === editingId
+              ? {
+                ...item,
+                title: formData.title,
+                content: formData.content
+              }
               : item
           )
         );
-        
+
         showSuccess(
           '¡Anuncio actualizado!',
           'El anuncio se ha actualizado correctamente.',
           3000
         );
-        
+
         setEditingId(null);
       } else {
         const { data, error } = await supabase
@@ -124,29 +128,30 @@ const ManageAnnouncements = () => {
           .single();
 
         if (error) throw error;
-        
+
         const newAnnouncement = {
-          id: parseInt(data.id),
+          id: data.id,
           title: data.title,
           content: data.content,
           created_at: data.created_at,
-          author: data.author?.name || 
-                 `${data.author?.first_name || ''} ${data.author?.last_name || ''}`.trim() || 
-                 user?.name || 'Admin'
+          author: data.author?.name ||
+            `${data.author?.first_name || ''} ${data.author?.last_name || ''}`.trim() ||
+            user?.name || 'Admin'
         };
-        
+
         setAnnouncements(prev => [newAnnouncement, ...prev]);
-        
+
         showSuccess(
           '¡Anuncio creado!',
           'El anuncio se ha publicado correctamente.',
           3000
         );
-        
+
         setIsCreating(false);
       }
-      
+
       setFormData({ title: '', content: '' });
+
     } catch (error) {
       console.error('Error saving announcement:', error);
       showError(
@@ -166,25 +171,28 @@ const ManageAnnouncements = () => {
     });
     setEditingId(announcement.id);
     setIsCreating(true);
+    setTimeout(() => {
+      titleInputRef.current?.focus();
+    }, 100); // Pequeno delay para garantir que o input já está renderizado
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Está seguro de que desea eliminar este anuncio?')) {
-      return;
-    }
-    
+  const handleDelete = async (id: string) => {
+    //if (!confirm('¿Está seguro de que desea eliminar este anuncio?')) {
+     // return;
+    //}
+
     try {
       setIsLoading(true);
-      
+
       const { error } = await supabase
         .from('announcements')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
-      
+
       setAnnouncements(prev => prev.filter(item => item.id !== id));
-      
+
       showSuccess(
         'Anuncio eliminado',
         'El anuncio se ha eliminado correctamente.',
@@ -218,18 +226,18 @@ const ManageAnnouncements = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
+      <NotificationSystem
+        notifications={notifications}
+        onRemove={removeNotification}
       />
-      
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
             Administrar anuncios
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
-            Cree, edite y elimine anuncios para la comunidad de SEMBRAR
+            Cree, edite y elimine anuncios para la comunidad del SEMINARIO
           </p>
         </div>
         {!isCreating && (
@@ -242,7 +250,7 @@ const ManageAnnouncements = () => {
           </button>
         )}
       </div>
-      
+
       {isCreating && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -260,13 +268,14 @@ const ManageAnnouncements = () => {
               <ArrowLeft size={20} />
             </button>
           </div>
-          
+
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <label htmlFor="title" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Título
               </label>
               <input
+                ref={titleInputRef} // Focus input when creating a new announcement
                 type="text"
                 id="title"
                 name="title"
@@ -277,7 +286,7 @@ const ManageAnnouncements = () => {
                 placeholder="Título del anuncio"
               />
             </div>
-            
+
             <div className="mb-4">
               <label htmlFor="content" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Contenido
@@ -293,7 +302,7 @@ const ManageAnnouncements = () => {
                 placeholder="Contenido del anuncio"
               ></textarea>
             </div>
-            
+
             <div className="flex justify-end">
               <button
                 type="submit"
@@ -307,7 +316,7 @@ const ManageAnnouncements = () => {
           </form>
         </motion.div>
       )}
-      
+
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
         <div className="divide-y divide-slate-200 dark:divide-slate-700">
           {announcements.map((announcement) => (
@@ -345,8 +354,11 @@ const ManageAnnouncements = () => {
                     <Edit size={18} />
                   </button>
                   <button
-                    onClick={() => handleDelete(announcement.id)}
-                    className="p-2 text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition"
+                    onClick={() => setConfirmDialog({ open: true, announcementId: announcement.id })}
+                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                    title="Eliminar"
+                  // onClick={() => handleDelete(announcement.id)}
+                  // className="p-2 text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition"
                   >
                     <Trash size={18} />
                   </button>
@@ -355,14 +367,48 @@ const ManageAnnouncements = () => {
             </div>
           ))}
         </div>
-        
+
         {announcements.length === 0 && (
           <div className="p-6 text-center text-slate-500 dark:text-slate-400">
             No hay anuncios disponibles. Cree uno nuevo haciendo clic en el botón "Nuevo anuncio".
           </div>
         )}
       </div>
-    </div>
+
+      {confirmDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-sm w-full shadow-lg">
+            <h2 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Confirmar eliminación</h2>
+            <p className="mb-6 text-slate-600 dark:text-slate-300">
+              ¿Está seguro de que desea eliminar este anúncio? Esta acción no se puede deshacer.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog({ open: false })}
+                className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-white hover:bg-gray-300 dark:hover:bg-slate-600"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (confirmDialog.announcementId) {
+                      await handleDelete(confirmDialog.announcementId);
+                    }
+                  } finally {
+                    setConfirmDialog({ open: false });
+                  }
+                }}
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div> // end of Notification container   
   );
 };
 

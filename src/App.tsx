@@ -21,13 +21,19 @@ import NotFound from './pages/NotFound';
 import ManageAssignments from './pages/teacher/ManageAssignments';
 import CourseManagement from './pages/teacher/CourseManagement';
 import StudentManagement from './pages/teacher/StudentManagement';
-import NotificationSystem from './components/NotificationSystem';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { useNotifications } from './hooks/useNotifications';
+import { useNotifications } from './contexts/NotificationContext';
+import { useConnectionStatus } from './hooks/useConnectionStatus';
+import { NotificationProvider } from './contexts/NotificationContext';
+
+function ConnectionStatusHandler() {
+  const { showError } = useNotifications();
+  useConnectionStatus(showError);
+  return null;
+}
 
 function App() {
-  const { notifications, removeNotification } = useNotifications();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -51,47 +57,46 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NotificationSystem 
-          notifications={notifications} 
-          onRemove={removeNotification} 
-        />
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<HomePage />} />
-            <Route path="login" element={<LoginPage />} />
-            <Route path="register" element={<RegisterPage />} />
-            
-            {/* Student Routes */}
-            <Route path="student" element={<ProtectedRoute role="student" />}>
-              <Route path="dashboard" element={<StudentDashboard />} />
-              <Route path="courses" element={<CoursesList />} />
-              <Route path="courses/:id" element={<CourseDetails />} />
-              <Route path="progress" element={<Progress />} />
+        <NotificationProvider>
+          <ConnectionStatusHandler />
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<HomePage />} />
+              <Route path="login" element={<LoginPage />} />
+              <Route path="register" element={<RegisterPage />} />
+
+              {/* Student Routes */}
+              <Route path="student" element={<ProtectedRoute role="student" />}>
+                <Route path="dashboard" element={<StudentDashboard />} />
+                <Route path="courses" element={<CoursesList />} />
+                <Route path="courses/:id" element={<CourseDetails />} />
+                <Route path="progress" element={<Progress />} />
+              </Route>
+
+              {/* Teacher Routes */}
+              <Route path="teacher" element={<ProtectedRoute role="teacher" />}>
+                <Route path="dashboard" element={<TeacherDashboard />} />
+                <Route path="courses" element={<ManageCourses />} />
+                <Route path="courses/:id" element={<CourseManagement />} />
+                <Route path="students/:id" element={<StudentManagement />} />
+                <Route path="assignments" element={<ManageAssignments />} />
+                <Route path="grades" element={<ManageGrades />} />
+              </Route>
+
+              {/* Admin Routes */}
+              <Route path="admin" element={<ProtectedRoute role="admin" />}>
+                <Route path="dashboard" element={<AdminDashboard />} />
+                <Route path="courses" element={<AdminManageCourses />} />
+                <Route path="announcements" element={<ManageAnnouncements />} />
+                <Route path="users" element={<ManageUsers />} />
+                <Route path="settings" element={<Settings />} />
+              </Route>
+
+              {/* 404 Route */}
+              <Route path="*" element={<NotFound />} />
             </Route>
-            
-            {/* Teacher Routes */}
-            <Route path="teacher" element={<ProtectedRoute role="teacher" />}>
-              <Route path="dashboard" element={<TeacherDashboard />} />
-              <Route path="courses" element={<ManageCourses />} />
-              <Route path="courses/:id" element={<CourseManagement />} />
-              <Route path="students/:id" element={<StudentManagement />} />
-              <Route path="assignments" element={<ManageAssignments />} />
-              <Route path="grades" element={<ManageGrades />} />
-            </Route>
-            
-            {/* Admin Routes */}
-            <Route path="admin" element={<ProtectedRoute role="admin" />}>
-              <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="courses" element={<AdminManageCourses />} />
-              <Route path="announcements" element={<ManageAnnouncements />} />
-              <Route path="users" element={<ManageUsers />} />
-              <Route path="settings" element={<Settings />} />
-            </Route>
-            
-            {/* 404 Route */}
-            <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
+          </Routes>
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -7,6 +7,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependency directories
+.bolt
 node_modules
 dist
 dist-ssr
@@ -23,3 +25,5 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+.vercel

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { BookOpen, Users, Award, Search, Filter, Save, X, Edit3, Check } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
+
 
 interface Course {
   id: string;
@@ -40,7 +40,7 @@ interface EditingGrade {
 
 const ManageGrades = () => {
   const { user } = useAuth();
-  const { notifications, addNotification, removeNotification } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -53,14 +53,7 @@ const ManageGrades = () => {
   const [editingGrade, setEditingGrade] = useState<EditingGrade | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
 
-  const showSuccess = (title: string, message: string, duration: number = 3000) => {
-    addNotification(title, 'success');
-  };
-
-  const showError = (title: string, message: string, duration: number = 3000) => {
-    addNotification(title, 'error');
-  };
-
+  
   useEffect(() => {
     if (user) {
       fetchCourses();
@@ -282,10 +275,7 @@ const ManageGrades = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+     {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
@@ -301,6 +291,7 @@ const ManageGrades = () => {
               Seleccionar Curso
             </label>
             <select
+              title='Selecciona un curso para gestionar las evaluaciones y calificaciones'
               value={selectedCourse}
               onChange={(e) => {
                 setSelectedCourse(e.target.value);
@@ -322,6 +313,7 @@ const ManageGrades = () => {
               Seleccionar Evaluación
             </label>
             <select
+              title='Selecciona una evaluación para gestionar las calificaciones'
               value={selectedAssignment}
               onChange={(e) => setSelectedAssignment(e.target.value)}
               disabled={!selectedCourse}
@@ -465,6 +457,7 @@ const ManageGrades = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           {isEditing ? (
                             <input
+                            title='Ingresa la calificación del estudiante'
                               type="number"
                               min="0"
                               max={selectedAssignmentData?.max_score || 100}
@@ -509,12 +502,14 @@ const ManageGrades = () => {
                           {isEditing ? (
                             <div className="flex space-x-2">
                               <button
+                                title='Guardar calificación'
                                 onClick={() => handleSaveGrade(student.id)}
                                 className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
                               >
                                 <Save size={16} />
                               </button>
                               <button
+                                title='Cancelar edición'
                                 onClick={handleCancelEdit}
                                 className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-300"
                               >
@@ -523,6 +518,7 @@ const ManageGrades = () => {
                             </div>
                           ) : (
                             <button
+                              title='Editar calificación'
                               onClick={() => handleEditGrade(student.id, studentGrade)}
                               className="text-sky-600 hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300"
                             >

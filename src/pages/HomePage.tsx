@@ -8,7 +8,7 @@ const HomePage = () => {
       {/* Hero Section */}
       <section className="relative py-20 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-sky-500 to-blue-600 opacity-90"></div>
-        <div className="absolute inset-0 bg-[url('https://images.pexels.com/photos/256520/pexels-photo-256520.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2')] bg-cover bg-center mix-blend-overlay"></div>
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1594428817719-c30e710f695e?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTI0fHxvbiUyMGxpbmUlMjBlc3R1ZGlvc3xlbnwwfHwwfHx8MA%3D%3D')] bg-cover bg-center mix-blend-overlay"></div>
         
         <div className="relative container mx-auto px-4 text-center">
           <motion.h1 

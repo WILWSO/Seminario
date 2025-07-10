@@ -3,11 +3,11 @@ import { User, Search, Filter, Plus, Edit, Trash, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
 import type { User as UserType } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';;
+
 
 const ManageUsers = () => {
-  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [users, setUsers] = useState<UserType[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -210,12 +210,8 @@ const ManageUsers = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
-      
+    <div className="space-y-6">      
+      {/* NotificationContext es aplicado en App globalmente sin necesidad de agregar codigo acá*/}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">

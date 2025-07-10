@@ -4,8 +4,7 @@ import { ArrowLeft, BookOpen, FileText, Download, Play, Check, Clock, ExternalLi
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 interface Course {
   id: string;
@@ -54,7 +53,7 @@ interface LessonContent {
 const CourseDetails = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const { user } = useAuth();
-  const { notifications, addNotification, removeNotification } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState<string | null>(null);
@@ -115,7 +114,7 @@ const CourseDetails = () => {
       setCourse(courseWithModules);
     } catch (error) {
       console.error('Error fetching course details:', error);
-      addNotification('Error al cargar los detalles del curso', 'error');
+      showError('Error al cargar los detalles del curso', 'error');
     } finally {
       setLoading(false);
     }
@@ -148,7 +147,7 @@ const CourseDetails = () => {
 
       if (error) throw error;
 
-      addNotification('Lección marcada como completada', 'success');
+      showSuccess('Lección marcada como completada', 'success');
     } catch (error) {
       console.error('Error marking lesson as complete:', error);
     }
@@ -174,13 +173,13 @@ const CourseDetails = () => {
 
       if (error) throw error;
       
-      addNotification('Has desistido del curso correctamente', 'success');
+      showSuccess('Has desistido del curso correctamente', 'success');
       setTimeout(() => {
         window.location.href = '/student/courses';
       }, 2000);
     } catch (error) {
       console.error('Error al desistir del curso:', error);
-      addNotification('Error al desistir del curso', 'error');
+      showError('Error al desistir del curso', 'error');
     } finally {
       setIsWithdrawing(false);
       setShowWithdrawModal(false);
@@ -237,10 +236,7 @@ const CourseDetails = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+      {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       <div className="flex items-center mb-6">
         <Link
           to="/student/courses"

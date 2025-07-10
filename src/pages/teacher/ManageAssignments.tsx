@@ -3,8 +3,8 @@ import { Plus, Edit, Trash, Save, X, FileText, Link as LinkIcon, Upload, Eye, Ca
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
+
 
 interface Course {
   id: string;
@@ -41,7 +41,7 @@ interface FormQuestion {
 
 const ManageAssignments = () => {
   const { user } = useAuth();
-  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -306,10 +306,7 @@ const ManageAssignments = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+      {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
@@ -368,6 +365,7 @@ const ManageAssignments = () => {
                 {editingAssignment ? 'Editar evaluación' : 'Crear nueva evaluación'}
               </h2>
               <button
+                title='Cerrar formulario'
                 onClick={resetForm}
                 className="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white"
               >
@@ -383,6 +381,7 @@ const ManageAssignments = () => {
                     Título *
                   </label>
                   <input
+                    title='Título de la evaluación'
                     type="text"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -396,6 +395,7 @@ const ManageAssignments = () => {
                     Curso *
                   </label>
                   <select
+                    title='Seleccionar curso'
                     value={formData.course_id}
                     onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
                     required
@@ -415,7 +415,8 @@ const ManageAssignments = () => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Descripción
                 </label>
-                <textarea
+                <textarea 
+                  title='Descripción de la evaluación'
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
@@ -429,6 +430,7 @@ const ManageAssignments = () => {
                     Tipo de evaluación *
                   </label>
                   <select
+                    title='Seleccionar tipo de evaluación'
                     value={formData.assignment_type}
                     onChange={(e) => setFormData({ ...formData, assignment_type: e.target.value as any })}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
@@ -472,7 +474,8 @@ const ManageAssignments = () => {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Fecha límite
                   </label>
-                  <input
+                  <input 
+                    title='Fecha límite para la evaluación'
                     type="date"
                     value={formData.due_date}
                     onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
@@ -485,6 +488,7 @@ const ManageAssignments = () => {
                     Puntuación máxima
                   </label>
                   <input
+                    title='Puntuación máxima para la evaluación'
                     type="number"
                     value={formData.max_score}
                     onChange={(e) => setFormData({ ...formData, max_score: parseInt(e.target.value) || 100 })}
@@ -518,6 +522,7 @@ const ManageAssignments = () => {
                           Pregunta {index + 1}
                         </h4>
                         <button
+                          title='Eliminar pregunta'
                           type="button"
                           onClick={() => removeQuestion(question.id)}
                           className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
@@ -531,7 +536,8 @@ const ManageAssignments = () => {
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                             Pregunta *
                           </label>
-                          <input
+                          <input 
+                            title='Pregunta del formulario'
                             type="text"
                             value={question.question}
                             onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
@@ -545,6 +551,7 @@ const ManageAssignments = () => {
                             Tipo de respuesta
                           </label>
                           <select
+                            title='Seleccionar tipo de respuesta'
                             value={question.type}
                             onChange={(e) => updateQuestion(question.id, { type: e.target.value as any })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
@@ -560,7 +567,8 @@ const ManageAssignments = () => {
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                             Puntos
                           </label>
-                          <input
+                          <input 
+                            title='Puntos asignados a la pregunta'
                             type="number"
                             value={question.points}
                             onChange={(e) => updateQuestion(question.id, { points: parseInt(e.target.value) || 0 })}
@@ -589,6 +597,7 @@ const ManageAssignments = () => {
                                     placeholder={`Opción ${optionIndex + 1}`}
                                   />
                                   <button
+                                    title='Eliminar opción'
                                     type="button"
                                     onClick={() => {
                                       const newOptions = [...(question.options || [])];
@@ -618,6 +627,7 @@ const ManageAssignments = () => {
 
                         <div className="flex items-center">
                           <input
+                            title='Marcar pregunta como obligatoria'
                             type="checkbox"
                             checked={question.required}
                             onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
@@ -697,6 +707,7 @@ const ManageAssignments = () => {
                         Tamaño máximo de archivo (MB)
                       </label>
                       <input
+                        title='Tamaño máximo de archivo permitido'
                         type="number"
                         value={formData.max_file_size_mb}
                         onChange={(e) => setFormData({ ...formData, max_file_size_mb: parseInt(e.target.value) || 10 })}
@@ -711,6 +722,7 @@ const ManageAssignments = () => {
 
               <div className="flex items-center">
                 <input
+                  title='Marcar evaluación como activa'
                   type="checkbox"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}

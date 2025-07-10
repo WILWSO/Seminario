@@ -4,8 +4,7 @@ import { ArrowLeft, Users, BookOpen, FileText, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
 import StudentList from '../../components/StudentList';
 
 interface Course {
@@ -22,7 +21,7 @@ interface Course {
 const StudentManagement = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { notifications, removeNotification, showError } = useNotifications();
+  const { showError } = useNotifications();
   const [course, setCourse] = useState<Course | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -110,10 +109,7 @@ const StudentManagement = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+     {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       
       <div className="flex items-center mb-6">
         <Link

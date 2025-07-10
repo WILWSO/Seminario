@@ -4,8 +4,7 @@ import { BookOpen, Plus, Edit, Trash, Users, FileText, Eye, EyeOff, Search } fro
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { useNotifications } from '../../hooks/useNotifications';
-import NotificationSystem from '../../components/NotificationSystem';
+import { useNotifications } from '../../contexts/NotificationContext';
 import FileUpload from '../../components/FileUpload';
 import { UploadResult } from '../../services/fileUpload';
 
@@ -24,7 +23,7 @@ interface Course {
 
 const ManageCourses = () => {
   const { user } = useAuth();
-  const { notifications, removeNotification, showSuccess, showError } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [courses, setCourses] = useState<Course[]>([]);
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -299,10 +298,7 @@ const ManageCourses = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+     {/* NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>

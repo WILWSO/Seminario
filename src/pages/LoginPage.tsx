@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
@@ -14,6 +14,7 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const registered = searchParams.get('registered');
+  const hasNavigated = useRef(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -26,11 +27,8 @@ const LoginPage = () => {
     
     try {
       await login(email, password);
-      
-      // The AuthContext will handle the redirect based on user role
-      // We'll let the auth state change trigger the navigation
+      // Navegação será feita pelo useEffect abaixo
     } catch (err: any) {
-      // Handle specific Supabase auth errors
       if (err.message?.includes('Invalid login credentials') || err.message?.includes('invalid_credentials')) {
         setError('Credenciales inválidas. Verifique su email y contraseña. Si no tiene una cuenta, regístrese primero.');
       } else if (err.message?.includes('Email not confirmed')) {
@@ -43,10 +41,11 @@ const LoginPage = () => {
     }
   };
 
-  // Redirect based on user role after successful login
+  // Redireciona apenas uma vez após login
   useEffect(() => {
-    if (user) {
-      // Redirigir basado en los roles del usuario (prioridad: admin > teacher > student)
+    console.log('LoginPage useEffect', user, hasNavigated.current);
+    if (user && !hasNavigated.current) {
+      hasNavigated.current = true;
       if (user.role?.includes('admin')) {
         navigate('/admin/dashboard');
       } else if (user.role?.includes('teacher')) {

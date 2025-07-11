@@ -32,142 +32,95 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
+  // Função robusta para buscar perfil com timeout
+  const fetchUserProfile = async (userId: string) => {
+    return Promise.race([
+      (async () => {
         try {
-          const profile = await fetchUserProfile(session.user.id);
-          setUser(profile);
-        } catch (error) {
-          console.error('Failed to fetch user profile on session check:', error);
-          // Create a minimal user object if profile fetch fails
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            first_name: '',
-            last_name: '',
-            role: ['student'],
-            document_type: 'dni',
-            document_number: '',
-            social_networks: {},
-            street_address: '',
-            street_number: '',
-            locality: '',
-            department: '',
-            province: '',
-            postal_code: '',
-            country: 'Argentina',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-        }
-      }
-      setIsLoading(false);
-    });
+          console.log('Fetching user profile for ID:', userId);
+          const { data, error } = await supabase
+            .from('users')
+            .select('id, name, first_name, last_name, email, role, profile_photo_url')
+            .eq('id', userId)
+            .single();
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
-      
-      setSession(session);
-      if (event === 'SIGNED_IN' && session?.user) {
-        try {
-          const profile = await fetchUserProfile(session.user.id);
-          setUser(profile);
-        } catch (error) {
-          console.error('Failed to fetch user profile on sign in:', error);
-          // Set a minimal user object if profile fetch fails
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            first_name: '',
-            last_name: '',
-            role: ['student'], // Garantir role padrão
-            document_type: 'dni',
-            document_number: '',
-            social_networks: {},
-            street_address: '',
-            street_number: '',
-            locality: '',
-            department: '',
-            province: '',
-            postal_code: '',
-            country: 'Argentina',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
+          if (error) {
+            console.error('Database error fetching user profile:', error);
+            if (error.code === 'PGRST116') {
+              console.log('User profile not found in database - this is normal for new users');
+              return null;
+            }
+            throw error;
+          }
+          console.log('User profile fetched successfully:', data);
+          return data;
+        } catch (error: any) {
+          console.error('Error in fetchUserProfile:', error);
+          if (error instanceof TypeError && error.message?.includes('fetch')) {
+            setError('Erro de conexão com o banco de dados.');
+            return null;
+          }
+          if (error.message?.includes('Invalid API key') || error.message?.includes('Project not found')) {
+            setError('Erro de configuração do Supabase.');
+            return null;
+          }
+          setError('Erro desconhecido ao buscar perfil.');
+          return null;
         }
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
+      })(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ao buscar perfil')), 10000))
+    ]);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!isMounted) return;
+      setSession(session);
+
+      if (session?.user) {
+        // 1. Carrega do cache imediatamente
+        const cachedProfile = localStorage.getItem('user_profile');
+        if (cachedProfile) {
+          setUser(JSON.parse(cachedProfile));
+          setIsLoading(false); // Libera a interface rapidamente
+        }
+
+        // 2. Atualiza do servidor em paralelo
+        fetchUserProfile(session.user.id).then(profile => {
+          if (profile && JSON.stringify(profile) !== JSON.stringify(user)) {
+            setUser(profile);
+            localStorage.setItem('user_profile', JSON.stringify(profile));
+          }
+          setIsLoading(false);
+        }).catch(() => setIsLoading(false));
+      } else {
         setIsLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => { isMounted = false; };
   }, []);
-
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      console.log('Fetching user profile for ID:', userId);
-      
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error('Database error fetching user profile:', error);
-        // If user doesn't exist in database, this is expected for new users
-        if (error.code === 'PGRST116') {
-          console.log('User profile not found in database - this is normal for new users');
-          return null;
-        }
-        throw error;
-      }
-
-      console.log('User profile fetched successfully:', data);
-      return data;
-    } catch (error) {
-      console.error('Error in fetchUserProfile:', error);
-      
-      // Check if it's a network error
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        console.error('Network connection failed. Please check your internet connection and Supabase configuration.');
-        return null;
-      }
-      
-      // Check if it's a Supabase configuration error
-      if (error.message?.includes('Invalid API key') || error.message?.includes('Project not found')) {
-        console.error('Supabase configuration error. Please check your environment variables.');
-        return null;
-      }
-      
-      return null;
-    }
-  };
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     setError(null);
-    
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      
       if (error) throw error;
-      
       if (data.user) {
-        await fetchUserProfile(data.user.id);
+        setSession(data.session); // <-- Certifique-se que está atualizando a sessão!
+        const profile = await fetchUserProfile(data.user.id);
+        setUser(profile);
+        if (!profile) setError('Perfil não encontrado.');
       }
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión');
+      setError(err.message || 'Erro ao iniciar sessão');
       throw err;
     } finally {
       setIsLoading(false);
@@ -179,8 +132,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
-      // Clear state immediately
       setUser(null);
       setSession(null);
       setError(null);
@@ -202,6 +153,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     logout,
     isAuthenticated: !!session && !!user
   };
+
+  console.log('AuthContext:', { user, session, isLoading, error });
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

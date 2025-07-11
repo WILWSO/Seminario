@@ -57,8 +57,8 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NotificationProvider>
-          <ConnectionStatusHandler />
+        <NotificationProvider> 
+          <ConnectionStatusHandler /> 
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<HomePage />} />

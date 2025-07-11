@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
-import NotificationSystem from '../../components/NotificationSystem';
+
 
 interface Announcement {
   id: string;
@@ -21,7 +21,7 @@ const ManageAnnouncements = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, userId?: string }>({ open: false }); // For delete confirmation dialog
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, announcementId?: string }>({ open: false }); // For delete confirmation dialog
   const [formData, setFormData] = useState({
     title: '',
     content: ''
@@ -177,10 +177,6 @@ const ManageAnnouncements = () => {
   };
 
   const handleDelete = async (id: string) => {
-    //if (!confirm('¿Está seguro de que desea eliminar este anuncio?')) {
-     // return;
-    //}
-
     try {
       setIsLoading(true);
 
@@ -226,11 +222,7 @@ const ManageAnnouncements = () => {
 
   return (
     <div className="space-y-6">
-      <NotificationSystem
-        notifications={notifications}
-        onRemove={removeNotification}
-      />
-
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
@@ -261,7 +253,8 @@ const ManageAnnouncements = () => {
             <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
               {editingId ? 'Editar anuncio' : 'Crear nuevo anuncio'}
             </h2>
-            <button
+            <button 
+              title='Cancelar'
               onClick={cancelForm}
               className="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white"
             >
@@ -347,7 +340,8 @@ const ManageAnnouncements = () => {
                   </div>
                 </div>
                 <div className="flex space-x-2 mt-4 md:mt-0">
-                  <button
+                  <button 
+                    title="Editar"
                     onClick={() => handleEdit(announcement)}
                     className="p-2 text-slate-600 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-400 transition"
                   >

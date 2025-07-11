@@ -42,7 +42,7 @@ const ManageCourses: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, userId?: string }>({ open: false });
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, courseId?: string }>({ open: false });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -214,12 +214,8 @@ const ManageCourses: React.FC = () => {
   }
 
   return (
-   // <div className="space-y-6">
-     // <NotificationSystem
-       // notifications={notifications}
-        //onRemove={removeNotification}
-      ///>
-    // NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá
+    <div className="space-y-6">     
+     {/*NotificationContext es aplicado globalmente sin necesidad de agregar codigo acá*/}
       <div className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Administrar Cursos</h1>
@@ -311,6 +307,7 @@ const ManageCourses: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      title='Editar'
                       onClick={() => startEdit(course)}
                       className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
                     >
@@ -399,6 +396,7 @@ const ManageCourses: React.FC = () => {
                       Nombre del Curso *
                     </label>
                     <input
+                      title='Nombre del Curso'
                       type="text"
                       required
                       value={formData.name}
@@ -411,7 +409,8 @@ const ManageCourses: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Descripción
                     </label>
-                    <textarea
+                    <textarea 
+                      title='Descripción del Curso'
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       rows={3}
@@ -423,7 +422,8 @@ const ManageCourses: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Profesor *
                     </label>
-                    <select
+                    <select 
+                      title='Seleccionar Profesor'
                       required
                       value={formData.teacher_id}
                       onChange={(e) => setFormData({ ...formData, teacher_id: e.target.value })}
@@ -444,6 +444,7 @@ const ManageCourses: React.FC = () => {
                         Créditos
                       </label>
                       <input
+                        title='Créditos del Curso'
                         type="number"
                         min="0"
                         value={formData.credits}

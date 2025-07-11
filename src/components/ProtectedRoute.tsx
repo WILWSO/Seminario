@@ -24,6 +24,8 @@ const ProtectedRoute = ({ role }: ProtectedRouteProps) => {
     return <Navigate to="/login" replace />;
   }
   
+  console.log('ProtectedRoute:', { isAuthenticated, user, isLoading });
+  
   // Verificar se o usuário tem o role necessário
   if (!user?.role || user.role.length === 0 || !user.role.includes(role)) {
     // Redirect to appropriate dashboard based on role

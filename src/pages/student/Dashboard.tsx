@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 interface Course {
   id: string;
   name: string;
-  period?: string  | null;
+  period?: string | null;
   description: string;
   progress: number;
   teacher_name: string;
@@ -27,7 +27,7 @@ const StudentDashboard = () => {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [isLoading, setIsLoading] = useState(true); 
+  const [isLoading, setIsLoading] = useState(true);
   const [periods, setPeriods] = useState<string[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
   const [recentWithdrawals, setRecentWithdrawals] = useState<any[]>([]);
@@ -35,11 +35,11 @@ const StudentDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       if (!user?.id) return;
-      
+
       try {
         // Buscar cursos matriculados
         const { data: enrollmentsData, error: enrollmentsError } = await supabase
-          .from('enrollments') 
+          .from('enrollments')
           .select(`
             *,
             status,
@@ -57,7 +57,7 @@ const StudentDashboard = () => {
         const uniquePeriods = [...new Set((enrollmentsData || [])
           .map((enrollment: any) => enrollment.course?.period)
           .filter(Boolean))];
-        
+
         setPeriods(uniquePeriods);
 
         // Buscar desistencias recientes
@@ -92,7 +92,7 @@ const StudentDashboard = () => {
         const coursesWithProgress = await Promise.all(
           (enrollmentsData || []).map(async (enrollment: any) => {
             const course = enrollment.course;
-            
+
             // Buscar total de lições do curso
             const { data: lessonsData, error: lessonsError } = await supabase
               .from('lessons')
@@ -107,7 +107,7 @@ const StudentDashboard = () => {
             if (lessonsError) throw lessonsError;
 
             const totalLessons = lessonsData?.length || 0;
-            const completedLessonsCount = (lessonsData || []).filter(lesson => 
+            const completedLessonsCount = (lessonsData || []).filter(lesson =>
               completedLessonIds.has(lesson.id)
             ).length;
 
@@ -119,9 +119,9 @@ const StudentDashboard = () => {
               description: course.description || '',
               progress,
               period: course.period,
-              teacher_name: course.teacher?.name || 
-                           `${course.teacher?.first_name || ''} ${course.teacher?.last_name || ''}`.trim() || 
-                           'Professor',              
+              teacher_name: course.teacher?.name ||
+                `${course.teacher?.first_name || ''} ${course.teacher?.last_name || ''}`.trim() ||
+                'Professor',
               image_url: course.image_url
             };
           })
@@ -140,15 +140,15 @@ const StudentDashboard = () => {
           .limit(5);
 
         if (announcementsError) throw announcementsError;
-        
+
         setAnnouncements((announcementsData || []).map((ann: any) => ({
           id: ann.id,
           title: ann.title,
           content: ann.content,
           date: ann.created_at,
-          author: ann.author?.name || 
-                 `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() || 
-                 'Admin'
+          author: ann.author?.name ||
+            `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() ||
+            'Admin'
         })));
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -158,7 +158,7 @@ const StudentDashboard = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchData();
   }, [user?.id]);
 
@@ -191,7 +191,7 @@ const StudentDashboard = () => {
           </Link>
         </div>
       </div>
-      
+
       {/* Filtro por período */}
       {periods.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
@@ -217,10 +217,10 @@ const StudentDashboard = () => {
           </div>
         </div>
       )}
-      
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <motion.div 
+        <motion.div
           whileHover={{ y: -5 }}
           className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
         >
@@ -238,8 +238,8 @@ const StudentDashboard = () => {
             </div>
           </div>
         </motion.div>
-        
-        <motion.div 
+
+        <motion.div
           whileHover={{ y: -5 }}
           className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
         >
@@ -257,8 +257,8 @@ const StudentDashboard = () => {
             </div>
           </div>
         </motion.div>
-        
-        <motion.div 
+
+        <motion.div
           whileHover={{ y: -5 }}
           className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-6"
         >
@@ -277,79 +277,71 @@ const StudentDashboard = () => {
           </div>
         </motion.div>
       </div>
-      
+
       {/* Recent Courses */}
       <div>
         <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">
           Mis cursos
-        </h2> 
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {courses
             .filter(course => selectedPeriod === 'all' || course.period === selectedPeriod)
             .map((course) => (
-            <motion.div
-              key={course.id}
-              whileHover={{ y: -5 }}
-              className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden"
-            >
-              <div className="h-32 bg-cover bg-center" 
-                   style={{ 
-                     backgroundImage: `url(${course.image_url || 'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2'})` 
-                   }}>
-                <div className="h-full bg-gradient-to-t from-black/50 to-transparent"></div>
-              </div>
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
-                  {course.name}
-                </h3>
-                {course.period && (
-                  <p className="text-xs text-slate-500 dark:text-slate-500 mb-1">
-                    Período: {course.period}
-                  </p>
-                )}
-                <p className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
-                  {course.description}
-                </p>
-                <div className="space-y-1 mb-4">
-                  <p className="text-sm text-slate-500 dark:text-slate-500">
-                    Profesor: {course.teacher_name}
-                  </p>
-                  {course.period && (
-                    <p className="text-sm text-slate-500 dark:text-slate-500 flex items-center">
-                      <Calendar size={14} className="mr-1" />
-                      Período: {course.period}
-                    </p>
-                  )}
+              <motion.div
+                key={course.id}
+                whileHover={{ y: -5 }}
+                className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden"
+              >
+                <div className="h-32 bg-cover bg-center"
+                  style={{
+                    backgroundImage: `url(${course.image_url || 'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2'})`
+                  }}>
+                  <div className="h-full bg-gradient-to-t from-black/50 to-transparent"></div>
                 </div>
-                {course.period && (
-                  <p className="text-sm text-slate-500 dark:text-slate-500 mb-4">
-                    Periodo: {course.period}
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
+                    {course.name}
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
+                    {course.description}
                   </p>
-                )}
-                <div className="mb-2">
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-slate-600 dark:text-slate-400">Progreso</span>
-                    <span className="font-medium text-slate-800 dark:text-white">{course.progress}%</span>
+                  
+                    <div className="mb-4 space-y-1">
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <span className="font-medium">Profesor:</span> {course.teacher_name}
+                      </p>
+                      {course.period && (
+                        <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
+                          <Calendar size={14} className="mr-1" />
+                          <span className="font-medium">Período:</span> {course.period}
+                        </p>
+                      )}                     
+                    </div>
+                  
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-slate-600 dark:text-slate-400">Progreso</span>
+                      <span className="font-medium text-slate-800 dark:text-white">{course.progress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-sky-500"
+                        style={{ width: `${course.progress}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-sky-500" 
-                      style={{ width: `${course.progress}%` }}
-                    ></div>
-                  </div>
+                  <Link
+                    to={`/student/courses/:${course.id}`}
+                    className="mt-2 inline-block text-sky-600 dark:text-sky-400 hover:underline"
+                  >
+                    Ver detalles
+                  </Link>
                 </div>
-                <Link
-                  to={`/student/courses/${course.id}`}
-                  className="mt-2 inline-block text-sky-600 dark:text-sky-400 hover:underline"
-                >
-                  Ver detalles
-                </Link>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            ))}
         </div>
       </div>
-      
+
       {/* Announcements */}
       <div>
         <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4 flex items-center">
@@ -358,7 +350,7 @@ const StudentDashboard = () => {
         </h2>
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md">
           {announcements.map((announcement, index) => (
-            <div 
+            <div
               key={announcement.id}
               className={`p-6 ${index !== announcements.length - 1 ? 'border-b border-slate-200 dark:border-slate-700' : ''}`}
             >
@@ -381,7 +373,7 @@ const StudentDashboard = () => {
               </div>
             </div>
           ))}
-          
+
           {announcements.length === 0 && (
             <div className="p-6 text-center text-slate-500 dark:text-slate-400">
               <h3 className="text-lg font-medium text-slate-800 dark:text-white mb-1">
@@ -392,7 +384,7 @@ const StudentDashboard = () => {
           )}
         </div>
       </div>
-      
+
       {/* Desistencias Recientes */}
       {recentWithdrawals.length > 0 && (
         <div>
@@ -402,7 +394,7 @@ const StudentDashboard = () => {
           </h2>
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md">
             {recentWithdrawals.map((withdrawal) => (
-              <div 
+              <div
                 key={withdrawal.id}
                 className="p-6 border-b border-slate-200 dark:border-slate-700 last:border-0"
               >

@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
   BookOpen, 
@@ -24,6 +24,7 @@ interface SidebarProps {
 const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   
   // Close role selector when sidebar closes or user changes
@@ -124,9 +125,9 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
   const handleRoleChange = (role: 'student' | 'teacher' | 'admin') => {
     setShowRoleSelector(false);
     
-    // Redirigir al dashboard del rol seleccionado
+    // Navegar al dashboard del rol seleccionado sin recargar la página
     const dashboardPath = `/${role}/dashboard`;
-    window.location.href = dashboardPath;
+    navigate(dashboardPath);
   };
 
   if (!isOpen) return null;

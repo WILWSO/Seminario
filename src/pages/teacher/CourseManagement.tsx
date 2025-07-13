@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Plus, Edit, Trash, Play, FileText, Save, X, RectangleHorizontal as DragHandleHorizontal } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Edit, Trash, Play, FileText, Save, X, RectangleHorizontal as DragHandleHorizontal, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
@@ -9,6 +9,7 @@ import LessonContentManager from '../../components/LessonContentManager';
 interface Course {
   id: string;
   name: string;
+  course_code: string;
   description: string;
   credits: number;
   is_active: boolean;
@@ -523,19 +524,28 @@ const CourseManagement = () => {
         </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-            Administrar: {course.name}
+            Administrar: {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
             Gestione los módulos y lecciones de su curso
           </p>
         </div>
-        <button
-          onClick={() => setIsCreatingModule(true)}
-          className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
-        >
-          <Plus size={18} className="mr-2" />
-          Nuevo módulo
-        </button>
+        <div className="flex items-center space-x-3">
+          <Link
+            to={`/teacher/students/${course.id}`}
+            className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition"
+          >
+            <Users size={18} className="mr-2" />
+            Ver estudiantes
+          </Link>
+          <button
+            onClick={() => setIsCreatingModule(true)}
+            className="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 transition"
+          >
+            <Plus size={18} className="mr-2" />
+            Nuevo módulo
+          </button>
+        </div>
       </div>
 
       {/* Course Info */}
@@ -543,7 +553,7 @@ const CourseManagement = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-2">
-              {course.name}
+              {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
             </h2>
             <p className="text-slate-600 dark:text-slate-400 mb-2">
               {course.description}

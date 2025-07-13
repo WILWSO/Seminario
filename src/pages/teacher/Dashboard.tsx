@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 interface Course {
   id: string;
   name: string;
+  course_code: string;
   description: string;
   credits: number;
   is_active: boolean;
@@ -262,7 +263,9 @@ const TeacherDashboard: React.FC = () => {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-gray-900">{course.name}</h3>
+                              <h3 className="font-semibold text-gray-900">
+                                {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
+                              </h3>
                               <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                 course.is_active 
                                   ? 'bg-green-100 text-green-800'

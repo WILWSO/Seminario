@@ -18,6 +18,7 @@ interface Course {
   enrollment_open: boolean;
   enrollment_start_date?: string;
   period?: string;
+  course_code?: string;
   enrollment_end_date?: string;
   max_students?: number;
   current_enrollments: number;
@@ -50,7 +51,7 @@ const CoursesList = () => {
       const { data: coursesData, error } = await supabase
         .from('courses')
         .select(`
-          id, name, description, teacher_id, credits, image_url, syllabus_url, is_active, enrollment_open, period,
+          id, name, description, teacher_id, credits, image_url, syllabus_url, is_active, enrollment_open, period, course_code,
           teacher:users!courses_teacher_id_fkey(id, name, first_name, last_name),
           enrollments(count)
         `)
@@ -97,6 +98,7 @@ const CoursesList = () => {
             enrollment_open: course.enrollment_open,
             enrollment_start_date: course.enrollment_start_date,
             period: course.period,
+            course_code: course.course_code,
             enrollment_end_date: course.enrollment_end_date,
             max_students: course.max_students,
             current_enrollments: course.enrollments?.length || 0,
@@ -252,7 +254,7 @@ const CoursesList = () => {
         <div className="p-6">
           <div className="flex justify-between items-start mb-3">
             <h3 className="text-lg font-semibold text-slate-800 dark:text-white">
-              {course.name}
+              {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
             </h3>
             <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${status.color}`}>
               <span className="mr-1">{status.icon}</span>
@@ -347,7 +349,7 @@ const CoursesList = () => {
             Cursos disponibles
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
-            Explora todos los cursos ofrecidos por SEMBRAR
+            Explora todos los cursos ofrecidos por el Seminario
           </p>
         </div>
       </div>

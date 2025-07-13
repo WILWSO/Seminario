@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit, Trash2, Users, BookOpen, Calendar, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 interface Course {
   id: string;
   name: string;
+  course_code: string;
   description: string | null;
   teacher_id: string;
   credits: number;
@@ -34,7 +34,6 @@ interface Teacher {
 }
 
 const ManageCourses: React.FC = () => {
-  const { user } = useAuth();
   const { showInfo, showWarning, showSuccess, showError } = useNotifications();
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -45,6 +44,7 @@ const ManageCourses: React.FC = () => {
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, courseId?: string }>({ open: false });
   const [formData, setFormData] = useState({
     name: '',
+    course_code: '',
     description: '',
     teacher_id: '',
     credits: 0,
@@ -96,18 +96,48 @@ const ManageCourses: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validar que el código del curso tenga entre 2 y 5 caracteres
+    if (formData.course_code.length < 2 || formData.course_code.length > 5) {
+      showError('Error de validación', 'El código del curso debe tener entre 2 y 5 caracteres.', 5000);
+      return;
+    }
+
+    // Validar que el código del curso no esté vacío
+    if (!formData.course_code.trim()) {
+      showError('Error de validación', 'El código del curso es obligatorio.', 5000);
+      return;
+    }
+
     try {
       if (editingCourse) {
         const { error } = await supabase
           .from('courses')
-          .update(formData)
+          .update({
+            name: formData.name,
+            course_code: formData.course_code,
+            description: formData.description,
+            teacher_id: formData.teacher_id,
+            credits: formData.credits,
+            period: formData.period,
+            enrollment_open: formData.enrollment_open,
+            is_active: formData.is_active
+          })
           .eq('id', editingCourse.id);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('courses')
-          .insert([formData]);
+          .insert([{
+            name: formData.name,
+            course_code: formData.course_code,
+            description: formData.description,
+            teacher_id: formData.teacher_id,
+            credits: formData.credits,
+            period: formData.period,
+            enrollment_open: formData.enrollment_open,
+            is_active: formData.is_active
+          }]);
 
         if (error) throw error;
       }
@@ -115,9 +145,15 @@ const ManageCourses: React.FC = () => {
       await fetchCourses();
       resetForm();
       showSuccess('Éxito!', `Curso ${editingCourse ? 'actualizado' : 'creado'} exitosamente`, 5000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving course:', error);
-      showError('Falla!', `Error al ${editingCourse ? 'actualizar' : 'crear'} el curso. Por favor, inténtalo de nuevo.`, 5000);
+      
+      // Manejar error de código duplicado
+      if (error?.code === '23505' && error?.message?.includes('course_code')) {
+        showError('Error de validación', 'El código del curso ya existe. Por favor, usa un código diferente.', 5000);
+      } else {
+        showError('Falla!', `Error al ${editingCourse ? 'actualizar' : 'crear'} el curso. Por favor, inténtalo de nuevo.`, 5000);
+      }
     }
   };
 
@@ -174,6 +210,7 @@ const ManageCourses: React.FC = () => {
   const resetForm = () => {
     setFormData({
       name: '',
+      course_code: '',
       description: '',
       teacher_id: '',
       credits: 0,
@@ -185,9 +222,16 @@ const ManageCourses: React.FC = () => {
     setShowCreateModal(false);
   };
 
+  const handleCourseCodeChange = (value: string) => {
+    // Convertir a mayúsculas y limitar entre 2 y 5 caracteres
+    const upperValue = value.toUpperCase().slice(0, 5);
+    setFormData({ ...formData, course_code: upperValue });
+  };
+
   const startEdit = (course: Course) => {
     setFormData({
       name: course.name,
+      course_code: course.course_code,
       description: course.description || '',
       teacher_id: course.teacher_id,
       credits: course.credits,
@@ -201,6 +245,7 @@ const ManageCourses: React.FC = () => {
 
   const filteredCourses = courses.filter(course =>
     course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    course.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
     course.teacher?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     course.period?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -228,7 +273,7 @@ const ManageCourses: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Buscar cursos, profesores o períodos..."
+              placeholder="Buscar por código, nombre, profesores o períodos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -250,7 +295,9 @@ const ManageCourses: React.FC = () => {
               <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">{course.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                      {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
+                    </h3>
                     <p className="text-sm text-gray-600 mb-2">{course.teacher?.name}</p>
                     {course.period && (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -404,6 +451,27 @@ const ManageCourses: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Código del Curso *
+                    </label>
+                    <input
+                      title='Código del Curso (2-5 caracteres)'
+                      type="text"
+                      required
+                      value={formData.course_code}
+                      onChange={(e) => handleCourseCodeChange(e.target.value)}
+                      placeholder="ej. MAT01"
+                      minLength={2}
+                      maxLength={5}
+                      pattern="[A-Z0-9]{2,5}"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      2-5 caracteres alfanuméricos (se convertirán a mayúsculas)
+                    </p>
+                  </div>                  
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

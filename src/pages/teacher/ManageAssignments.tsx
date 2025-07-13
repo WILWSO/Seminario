@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash, Save, X, FileText, Link as LinkIcon, Upload, Eye, Calendar, Users, Clock, BookOpen, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash, X, FileText, Calendar, Users, BookOpen, ExternalLink, GraduationCap, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
+import CreateAssignmentQuestionsModal from '../../components/CreateAssignmentQuestionsModalNew';
 
 
 interface Course {
   id: string;
   name: string;
+  course_code: string;
 }
 
 interface Assignment {
@@ -18,7 +21,7 @@ interface Assignment {
   course_id: string;
   external_form_url?: string;
   course_name: string;
-  assignment_type: 'form' | 'file_upload';
+  assignment_type: 'form' | 'file_upload' | 'external_form';
   due_date: string;
   max_score: number;
   form_questions?: FormQuestion[];
@@ -42,12 +45,15 @@ interface FormQuestion {
 const ManageAssignments = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useNotifications();
+  const navigate = useNavigate();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<string>('');
+  const [showQuestionsModal, setShowQuestionsModal] = useState(false);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -77,7 +83,7 @@ const ManageAssignments = () => {
       // Buscar cursos del profesor
       const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
-        .select('id, name')
+        .select('id, name, course_code')
         .eq('teacher_id', user?.id)
         .eq('is_active', true)
         .order('name');
@@ -91,7 +97,8 @@ const ManageAssignments = () => {
         .select(`
           *,
           course:courses(name),
-          grades(count)
+          grades(count),
+          assignment_submissions(count)
         `)
         .in('course_id', (coursesData || []).map(c => c.id))
         .order('created_at', { ascending: false });
@@ -101,7 +108,7 @@ const ManageAssignments = () => {
       const processedAssignments = (assignmentsData || []).map(assignment => ({
         ...assignment,
         course_name: assignment.course?.name || 'Curso desconocido',
-        submissions_count: assignment.grades?.length || 0,
+        submissions_count: assignment.assignment_submissions?.length || assignment.grades?.length || 0,
         form_questions: assignment.form_questions || [],
         allowed_file_types: assignment.allowed_file_types || ['pdf', 'doc', 'docx'],
         max_file_size_mb: assignment.max_file_size_mb || 10
@@ -129,9 +136,25 @@ const ManageAssignments = () => {
       return;
     }
 
-    if (formData.assignment_type === 'form' && formData.form_questions.length === 0) {
-      showError('Preguntas requeridas', 'Debe agregar al menos una pregunta para el formulario.', 3000);
-      return;
+    /// Validación específica para formularios internos vs externos
+    if (formData.assignment_type === 'form') {
+      if (formData.form_questions.length === 0) {
+        showError(
+          'Preguntas requeridas', 
+          'Para formularios internos debe agregar al menos una pregunta.', 
+          4000
+        );
+        return;
+      }
+    } else if (formData.assignment_type === 'external_form') {
+      if (!formData.external_form_url.trim()) {
+        showError(
+          'URL requerida', 
+          'Para formularios externos debe proporcionar la URL del formulario.', 
+          4000
+        );
+        return;
+      }
     }
 
     try {
@@ -292,6 +315,16 @@ const ManageAssignments = () => {
     });
   };
 
+  const handleCloseQuestionsModal = () => {
+    setShowQuestionsModal(false);
+    setSelectedAssignmentId(null);
+  };
+
+  const handleQuestionsModalSave = () => {
+    fetchData(); // Refrescar datos después de guardar
+    handleCloseQuestionsModal();
+  };
+
   const filteredAssignments = selectedCourse
     ? assignments.filter(a => a.course_id === selectedCourse)
     : assignments;
@@ -314,7 +347,7 @@ const ManageAssignments = () => {
             Administrar evaluaciones
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
-            Cree y gestione evaluaciones para sus cursos
+            Cree y gestione evaluaciones para sus cursos *
           </p>
         </div>
         {!isCreating && (
@@ -338,12 +371,13 @@ const ManageAssignments = () => {
             <select
               value={selectedCourse}
               onChange={(e) => setSelectedCourse(e.target.value)}
+              title="Filtrar evaluaciones por curso"
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
             >
               <option value="">Todos los cursos</option>
               {courses.map(course => (
                 <option key={course.id} value={course.id}>
-                  {course.name}
+                  {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
                 </option>
               ))}
             </select>
@@ -404,7 +438,7 @@ const ManageAssignments = () => {
                     <option value="">Seleccionar curso</option>
                     {courses.map(course => (
                       <option key={course.id} value={course.id}>
-                        {course.name}
+                        {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
                       </option>
                     ))}
                   </select>
@@ -435,15 +469,16 @@ const ManageAssignments = () => {
                     onChange={(e) => setFormData({ ...formData, assignment_type: e.target.value as any })}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
                   >
-                    <option value="form">Formulario (respuesta automática)</option>
+                    <option value="form">Formulario interno (respuesta automática)</option>
+                    <option value="external_form">Formulario externo (URL)</option>
                     <option value="file_upload">Subida de archivo (ensayo/informe)</option>
                   </select>
                 </div>
 
-                {formData.assignment_type === 'form' && (
+                {formData.assignment_type === 'external_form' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      URL de Formulario de Google (opcional)
+                      URL de Formulario Externo *
                     </label>
                     <div className="flex">
                       <input
@@ -451,6 +486,7 @@ const ManageAssignments = () => {
                         value={formData.external_form_url}
                         onChange={(e) => setFormData({ ...formData, external_form_url: e.target.value })}
                         placeholder="https://forms.google.com/..."
+                        required
                         className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-l-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
                       />
                       {formData.external_form_url && (
@@ -458,6 +494,7 @@ const ManageAssignments = () => {
                           href={formData.external_form_url}
                           target="_blank"
                           rel="noopener noreferrer"
+                          title="Abrir formulario externo"
                           className="px-3 py-2 bg-slate-100 dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded-r-md hover:bg-slate-200 dark:hover:bg-slate-500 transition"
                         >
                           <ExternalLink size={16} />
@@ -465,7 +502,7 @@ const ManageAssignments = () => {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Si proporciona una URL de formulario externo, no necesita crear preguntas abajo.
+                      Para formularios externos, solo se registrará el puntaje final manualmente.
                     </p>
                   </div>
                 )}
@@ -499,7 +536,7 @@ const ManageAssignments = () => {
               </div>
 
               {/* Configuración específica por tipo */}
-              {formData.assignment_type === 'form' && !formData.external_form_url ? (
+              {formData.assignment_type === 'form' ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-md font-semibold text-slate-800 dark:text-white">
@@ -580,7 +617,7 @@ const ManageAssignments = () => {
                         {(question.type === 'single_choice' || question.type === 'multiple_choice') && (
                           <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                              Opciones (una por línea)
+                              Opciones* (una por línea)
                             </label>
                             <div className="space-y-2">
                               {(question.options || []).map((option, optionIndex) => (
@@ -632,10 +669,9 @@ const ManageAssignments = () => {
                             checked={question.required}
                             onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
                             className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300 rounded"
-                          />
-                          <label className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
-                            Pregunta obligatoria
-                          </label>
+                          />                        <label className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
+                          Pregunta obligatoria
+                        </label>
                         </div>
                       </div>
                     </div>
@@ -814,7 +850,9 @@ const ManageAssignments = () => {
                   </div>
                   <div className="flex items-center">
                     <Users size={16} className="mr-1" />
-                    <span>{assignment.submissions_count} respuestas</span>
+                    <span>
+                      {assignment.assignment_type === 'file_upload' ? 'Entregas' : 'Respuestas'}: {assignment.submissions_count}
+                    </span>
                   </div>
                   <div className="flex items-center">
                     <FileText size={16} className="mr-1" />
@@ -830,6 +868,37 @@ const ManageAssignments = () => {
               </div>
               
               <div className="mt-4 lg:mt-0 lg:ml-6 flex items-center space-x-2">
+                {assignment.assignment_type === 'file_upload' && (
+                  <button
+                    onClick={() => navigate(`/teacher/assignments/${assignment.id}/submissions`)}
+                    className="p-2 text-orange-600 hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-900/20 rounded-md transition"
+                    title="Ver entregas de estudiantes"
+                  >
+                    <FileText size={18} />
+                  </button>
+                )}
+                
+                {assignment.assignment_type === 'form' && (
+                  <button
+                    onClick={() => {
+                      setSelectedAssignmentId(assignment.id);
+                      setShowQuestionsModal(true);
+                    }}
+                    className="p-2 text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20 rounded-md transition"
+                    title="Crear/Editar preguntas"
+                  >
+                    <HelpCircle size={18} />
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => navigate(`/teacher/managegrades/${assignment.id}`)}
+                  className="p-2 text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20 rounded-md transition"
+                  title="Gestionar notas"
+                >
+                  <GraduationCap size={18} />
+                </button>
+                
                 <button
                   onClick={() => handleEdit(assignment)}
                   className="p-2 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/20 rounded-md transition"
@@ -867,6 +936,37 @@ const ManageAssignments = () => {
           </div>
         )}
       </div>
+
+      {/* Información sobre tipos de evaluación */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
+              <FileText className="h-4 w-4 text-white" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200">
+              Tipos de evaluaciones
+            </h3>
+            <div className="text-sm text-blue-700 dark:text-blue-300 mt-1 space-y-1">
+              <p><strong>Formulario interno:</strong> Crea preguntas dentro de la aplicación con respuestas automáticas y cálculo de puntaje.</p>
+              <p><strong>Formulario externo:</strong> Usa una URL externa (Google Forms, etc.). Solo se registra el puntaje final manualmente.</p>
+              <p><strong>Subida de archivo:</strong> Para ensayos e informes que requieren revisión manual.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de creación de preguntas */}
+      {selectedAssignmentId && (
+        <CreateAssignmentQuestionsModal
+          isOpen={showQuestionsModal}
+          onClose={handleCloseQuestionsModal}
+          assignmentId={selectedAssignmentId}
+          onSave={handleQuestionsModalSave}
+        />
+      )}
     </div>
   );
 };

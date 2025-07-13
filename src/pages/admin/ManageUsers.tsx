@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Search, Filter, Plus, Edit, Trash, Shield } from 'lucide-react';
+import { User, Search, Filter, Edit, Trash, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
 import type { User as UserType } from '../../config/supabase';
@@ -13,6 +13,7 @@ const ManageUsers = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [userLinks, setUserLinks] = useState<Record<string, any>>({});
   const [filters, setFilters] = useState({
     role: 'all',
     status: 'all'
@@ -31,6 +32,11 @@ const ManageUsers = () => {
         
         setUsers(data || []);
         setFilteredUsers(data || []);
+        
+        // Cargar vínculos para cada usuario
+        if (data) {
+          await loadUserLinks(data);
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
         showError(
@@ -47,6 +53,165 @@ const ManageUsers = () => {
     
     fetchUsers();
   }, []);
+
+  const loadUserLinks = async (usersList: UserType[]) => {
+    try {
+      const linksData: Record<string, any> = {};
+      
+      // Inicializar datos para todos los usuarios
+      usersList.forEach(user => {
+        linksData[user.id] = {
+          enrollments: 0,
+          courses: 0,
+          isOnlyAdmin: false
+        };
+      });
+
+      // Obtener todos los IDs de usuarios con cada rol
+      const studentIds = usersList.filter(user => user.role?.includes('student')).map(u => u.id);
+      const teacherIds = usersList.filter(user => user.role?.includes('teacher')).map(u => u.id);
+      const adminIds = usersList.filter(user => user.role?.includes('admin')).map(u => u.id);
+
+      // Consulta masiva para matrículas activas (estudiantes)
+      if (studentIds.length > 0) {
+        const { data: enrollments } = await supabase
+          .from('enrollments')
+          .select('user_id')
+          .in('user_id', studentIds)
+          .eq('is_active', true);
+
+        if (enrollments) {
+          // Contar matrículas por usuario
+          const enrollmentCounts = enrollments.reduce((acc, enrollment) => {
+            acc[enrollment.user_id] = (acc[enrollment.user_id] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+          // Actualizar datos
+          Object.keys(enrollmentCounts).forEach(userId => {
+            if (linksData[userId]) {
+              linksData[userId].enrollments = enrollmentCounts[userId];
+            }
+          });
+        }
+      }
+
+      // Consulta masiva para cursos (profesores)
+      if (teacherIds.length > 0) {
+        const { data: courses } = await supabase
+          .from('courses')
+          .select('teacher_id')
+          .in('teacher_id', teacherIds);
+
+        if (courses) {
+          // Contar cursos por profesor
+          const courseCounts = courses.reduce((acc, course) => {
+            acc[course.teacher_id] = (acc[course.teacher_id] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+          // Actualizar datos
+          Object.keys(courseCounts).forEach(userId => {
+            if (linksData[userId]) {
+              linksData[userId].courses = courseCounts[userId];
+            }
+          });
+        }
+      }
+
+      // Verificar administradores únicos (solo una consulta)
+      if (adminIds.length > 0) {
+        const { data: allAdmins } = await supabase
+          .from('users')
+          .select('id, role')
+          .contains('role', ['admin']);
+
+        if (allAdmins) {
+          const activeAdminIds = allAdmins
+            .filter(admin => admin.role?.includes('admin'))
+            .map(admin => admin.id);
+
+          // Si solo hay un administrador activo, marcarlo
+          if (activeAdminIds.length === 1) {
+            const onlyAdminId = activeAdminIds[0];
+            if (linksData[onlyAdminId]) {
+              linksData[onlyAdminId].isOnlyAdmin = true;
+            }
+          }
+        }
+      }
+      
+      setUserLinks(linksData);
+    } catch (error) {
+      console.error('Error loading user links:', error);
+    }
+  };
+
+  const updateUserLinks = async (userId: string, role: 'student' | 'teacher' | 'admin', action: 'add' | 'remove') => {
+    try {
+      const currentLinks = userLinks[userId] || {
+        enrollments: 0,
+        courses: 0,
+        isOnlyAdmin: false
+      };
+
+      if (action === 'add') {
+        // Al agregar un rol, verificar si necesita actualizar los vínculos
+        if (role === 'student') {
+          // Verificar matrículas para el nuevo estudiante
+          const { data: enrollments } = await supabase
+            .from('enrollments')
+            .select('user_id')
+            .eq('user_id', userId)
+            .eq('is_active', true);
+          currentLinks.enrollments = enrollments?.length || 0;
+        }
+        
+        if (role === 'teacher') {
+          // Verificar cursos para el nuevo profesor
+          const { data: courses } = await supabase
+            .from('courses')
+            .select('teacher_id')
+            .eq('teacher_id', userId);
+          currentLinks.courses = courses?.length || 0;
+        }
+        
+        if (role === 'admin') {
+          // Verificar si será el único administrador
+          const { data: allAdmins } = await supabase
+            .from('users')
+            .select('id, role')
+            .contains('role', ['admin']);
+          
+          if (allAdmins) {
+            const activeAdminIds = allAdmins
+              .filter(admin => admin.role?.includes('admin'))
+              .map(admin => admin.id);
+            currentLinks.isOnlyAdmin = activeAdminIds.length === 1;
+          }
+        }
+      } else if (action === 'remove') {
+        // Al eliminar un rol, limpiar los vínculos correspondientes
+        if (role === 'student') {
+          currentLinks.enrollments = 0;
+        }
+        if (role === 'teacher') {
+          currentLinks.courses = 0;
+        }
+        if (role === 'admin') {
+          currentLinks.isOnlyAdmin = false;
+        }
+      }
+
+      // Actualizar el estado local
+      setUserLinks(prevLinks => ({
+        ...prevLinks,
+        [userId]: currentLinks
+      }));
+    } catch (error) {
+      console.error('Error updating user links:', error);
+    }
+  };
 
   useEffect(() => {
     // Apply filters and search
@@ -81,6 +246,7 @@ const ManageUsers = () => {
 
       if (error) throw error;
 
+      // Actualizar el usuario en el estado
       setUsers(prevUsers => 
         prevUsers.map(user => 
           user.id === userId 
@@ -88,6 +254,9 @@ const ManageUsers = () => {
             : user
         )
       );
+
+      // Actualizar los enlaces del usuario específico
+      await updateUserLinks(userId, newRole, 'add');
       
       showSuccess(
         'Rol agregado',
@@ -105,17 +274,19 @@ const ManageUsers = () => {
   };
 
   const handleRemoveRole = async (userId: string, roleToRemove: 'student' | 'teacher' | 'admin') => {
-    const user = users.find(u => u.id === userId);
-    if (user && user.role && user.role.length <= 1) {
-      showError(
-        'No se puede eliminar',
-        'No se puede eliminar el último rol del usuario. Cada usuario debe tener al menos un rol.',
-        5000
-      );
-      return;
-    }
-    
     try {
+      // Verificar vínculos activos antes de eliminar el rol
+      const hasActiveLinks = await checkActiveLinks(userId, roleToRemove);
+      
+      if (hasActiveLinks.hasLinks) {
+        showError(
+          'No se puede eliminar el rol',
+          hasActiveLinks.message,
+          8000
+        );
+        return;
+      }
+
       const { error } = await supabase.rpc('remove_user_role', {
         user_id: userId,
         old_role: roleToRemove
@@ -123,6 +294,7 @@ const ManageUsers = () => {
 
       if (error) throw error;
 
+      // Actualizar el usuario en el estado
       setUsers(prevUsers => 
         prevUsers.map(user => 
           user.id === userId 
@@ -130,6 +302,9 @@ const ManageUsers = () => {
             : user
         )
       );
+
+      // Actualizar los enlaces del usuario específico
+      await updateUserLinks(userId, roleToRemove, 'remove');
       
       showSuccess(
         'Rol eliminado',
@@ -146,8 +321,181 @@ const ManageUsers = () => {
     }
   };
 
+  const checkActiveLinks = async (userId: string, roleToRemove: 'student' | 'teacher' | 'admin') => {
+    try {
+      let hasLinks = false;
+      let message = '';
+      let details: string[] = [];
+
+      // Primero verificar con datos ya cargados
+      const userLink = userLinks[userId];
+      
+      if (roleToRemove === 'student') {
+        // Usar datos ya cargados si están disponibles
+        if (userLink && userLink.enrollments > 0) {
+          hasLinks = true;
+          details.push(`${userLink.enrollments} matrícula(s) activa(s) como estudiante`);
+          
+          // Solo consultar detalles adicionales (nombres de cursos) si es necesario
+          try {
+            const { data: enrollments } = await supabase
+              .from('enrollments')
+              .select('course:courses(name)')
+              .eq('user_id', userId)
+              .eq('is_active', true)
+              .limit(5); // Limitar para evitar consultas muy grandes
+
+            if (enrollments) {
+              const courseNames = enrollments.map((e: any) => e.course?.name).filter(Boolean);
+              if (courseNames.length > 0) {
+                details.push(`Cursos: ${courseNames.slice(0, 3).join(', ')}${courseNames.length > 3 ? '...' : ''}`);
+              }
+            }
+          } catch (error) {
+            console.warn('Error fetching course details:', error);
+          }
+        }
+      }
+
+      if (roleToRemove === 'teacher') {
+        // Usar datos ya cargados si están disponibles
+        if (userLink && userLink.courses > 0) {
+          hasLinks = true;
+          details.push(`${userLink.courses} curso(s) como profesor`);
+          
+          // Solo consultar detalles adicionales (nombres de cursos) si es necesario
+          try {
+            const { data: courses } = await supabase
+              .from('courses')
+              .select('name')
+              .eq('teacher_id', userId)
+              .limit(5); // Limitar para evitar consultas muy grandes
+
+            if (courses) {
+              const courseNames = courses.map(c => c.name);
+              details.push(`Cursos: ${courseNames.slice(0, 3).join(', ')}${courseNames.length > 3 ? '...' : ''}`);
+            }
+          } catch (error) {
+            console.warn('Error fetching course details:', error);
+          }
+        }
+      }
+
+      if (roleToRemove === 'admin') {
+        // Usar datos ya cargados si están disponibles
+        if (userLink && userLink.isOnlyAdmin) {
+          hasLinks = true;
+          details.push('Este es el único administrador del sistema');
+        }
+      }
+
+      if (hasLinks) {
+        message = `No se puede eliminar el rol ${roleToRemove} porque el usuario tiene vínculos activos:\n\n${details.join('\n')}\n\nPara eliminar este rol, primero debe:\n`;
+        
+        if (roleToRemove === 'student') {
+          message += '• Desmatricular al usuario de todos los cursos\n• O transferir las matrículas a otro usuario';
+        } else if (roleToRemove === 'teacher') {
+          message += '• Asignar los cursos a otro profesor\n• O eliminar los cursos si ya no son necesarios';
+        } else if (roleToRemove === 'admin') {
+          message += '• Promover a otro usuario como administrador\n• O mantener al menos un administrador activo';
+        }
+      }
+
+      return { hasLinks, message };
+    } catch (error) {
+      console.error('Error checking active links:', error);
+      return { 
+        hasLinks: true, 
+        message: 'Error al verificar vínculos activos. Por seguridad, no se puede eliminar el rol.' 
+      };
+    }
+  };
+
   const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm('¿Está seguro de que desea eliminar este usuario? Esta acción no se puede deshacer.')) {
+    // Obtener información del usuario y sus vínculos
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    // Preparar mensaje de advertencia basado en los vínculos conocidos
+    const userLink = userLinks[userId];
+    
+    let warningMessage = '¿Está seguro de que desea eliminar este usuario?\n\n';
+    
+    // Verificar vínculos basándose en los roles y datos ya cargados
+    const cascadeWarnings = [];
+    
+    if (user.role?.includes('student') && userLink?.enrollments > 0) {
+      cascadeWarnings.push(`• ${userLink.enrollments} matrícula(s) activa(s) serán eliminadas`);
+    }
+    
+    if (user.role?.includes('teacher') && userLink?.courses > 0) {
+      cascadeWarnings.push(`• ${userLink.courses} curso(s) activo(s) - ELIMINACIÓN BLOQUEADA (RESTRICT)`);
+    }
+    
+    if (user.role?.includes('admin') && userLink?.isOnlyAdmin) {
+      cascadeWarnings.push('• ¡ADVERTENCIA! Este es el único administrador del sistema');
+    }
+    
+    // Agregar advertencias adicionales sobre posibles vínculos en cascada
+    const additionalWarnings = [];
+    
+    // Advertencias específicas basadas en la configuración real de CASCADE
+    if (user.role?.includes('student')) {
+      additionalWarnings.push('• Todas las entregas de tareas del estudiante serán eliminadas (CASCADE)');
+      additionalWarnings.push('• Todas las calificaciones del estudiante serán eliminadas (CASCADE)');
+      additionalWarnings.push('• El progreso de aprendizaje del estudiante será eliminado (CASCADE)');
+    }
+    
+    if (user.role?.includes('teacher')) {
+      additionalWarnings.push('• Los cursos del profesor quedarán sin instructor (RESTRICT - puede fallar)');
+      additionalWarnings.push('• Las calificaciones asignadas por el profesor se mantendrán (SET NULL)');
+    }
+    
+    // Advertencias generales para todos los usuarios
+    additionalWarnings.push('• Los anuncios creados por el usuario se mantendrán (SET NULL)');
+    additionalWarnings.push('• El historial de actividad del usuario se perderá permanentemente');
+    
+    if (cascadeWarnings.length > 0 || user.role?.length > 0) {
+      warningMessage += '⚠️ ELIMINACIÓN EN CASCADA:\n';
+      warningMessage += 'Esta acción eliminará automáticamente:\n\n';
+      
+      if (cascadeWarnings.length > 0) {
+        warningMessage += cascadeWarnings.join('\n') + '\n';
+      }
+      
+      warningMessage += additionalWarnings.join('\n') + '\n\n';
+      warningMessage += 'Esta acción NO se puede deshacer.\n\n';
+      
+      if (userLink?.isOnlyAdmin) {
+        warningMessage += '❌ ACCIÓN BLOQUEADA: No se puede eliminar al único administrador del sistema.\n';
+        warningMessage += 'Debe asignar el rol de administrador a otro usuario antes de continuar.';
+        
+        showError(
+          'No se puede eliminar usuario',
+          'Este es el único administrador del sistema. Debe asignar el rol de administrador a otro usuario antes de eliminar este usuario.',
+          8000
+        );
+        return;
+      }
+      
+      if (user.role?.includes('teacher') && userLink?.courses > 0) {
+        warningMessage += '❌ ACCIÓN BLOQUEADA: No se puede eliminar un profesor con cursos activos.\n';
+        warningMessage += 'Debe reasignar los cursos a otro profesor antes de continuar.';
+        
+        showError(
+          'No se puede eliminar usuario',
+          `Este profesor tiene ${userLink.courses} curso(s) activo(s). Debe reasignar los cursos a otro profesor antes de eliminar este usuario.`,
+          8000
+        );
+        return;
+      }
+      
+      warningMessage += '¿Desea continuar con la eliminación?';
+    } else {
+      warningMessage += 'Esta acción no se puede deshacer.\n¿Desea continuar?';
+    }
+
+    if (!window.confirm(warningMessage)) {
       return;
     }
 
@@ -163,7 +511,7 @@ const ManageUsers = () => {
       
       showSuccess(
         'Usuario eliminado',
-        'El usuario se ha eliminado correctamente.',
+        'El usuario y todos sus datos asociados han sido eliminados correctamente.',
         3000
       );
     } catch (error) {
@@ -223,6 +571,39 @@ const ManageUsers = () => {
         </div>
       </div>
 
+      {/* Información sobre vínculos y eliminaciones */}
+      <div className="space-y-4">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Información sobre eliminación de roles
+              </h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                Los roles no se pueden eliminar si el usuario tiene vínculos activos. 
+                El ícono <AlertTriangle size={12} className="inline mx-1 text-amber-500" /> indica vínculos que impiden la eliminación.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Eliminación en cascada de usuarios
+              </h3>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                Al eliminar un usuario, se eliminarán automáticamente todos sus datos relacionados: 
+                matrículas, tareas, entregas, comentarios y participaciones. Esta acción no se puede deshacer.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Search and Filters */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
         <div className="flex flex-col md:flex-row gap-4">
@@ -256,6 +637,7 @@ const ManageUsers = () => {
                   value={filters.role}
                   onChange={(e) => setFilters({ ...filters, role: e.target.value })}
                   className="w-full border border-slate-300 dark:border-slate-600 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                  title="Filtrar por rol"
                 >
                   <option value="all">Todos los roles</option>
                   <option value="student">Estudiantes</option>
@@ -320,15 +702,44 @@ const ManageUsers = () => {
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getRoleBadgeColor(role)}`}>
                             {getRoleDisplayName(role)}
                           </span>
-                          {role !== 'student' && (
-                            <button
-                              onClick={() => handleRemoveRole(user.id, role as any)}
-                              className="ml-1 text-red-500 hover:text-red-700 text-xs"
-                              title="Remover rol"
-                            >
-                              ×
-                            </button>
+                          {(user.role || []).length > 1 && (
+                            <div className="flex items-center ml-1">
+                              <button
+                                onClick={() => handleRemoveRole(user.id, role as any)}
+                                className="text-red-500 hover:text-red-700 text-xs"
+                                title="Remover rol"
+                              >
+                                ×
+                              </button>
+                            </div>
                           )}
+                          {/* Indicador de vínculos activos específico por rol */}
+                          {(() => {
+                            const userLink = userLinks[user.id];
+                            let hasRoleLinks = false;
+                            let roleWarnings = [];
+                            
+                            if (role === 'student' && userLink?.enrollments > 0) {
+                              hasRoleLinks = true;
+                              roleWarnings.push(`${userLink.enrollments} matrícula(s) activa(s)`);
+                            }
+                            
+                            if (role === 'teacher' && userLink?.courses > 0) {
+                              hasRoleLinks = true;
+                              roleWarnings.push(`${userLink.courses} curso(s) como profesor`);
+                            }
+                            
+                            if (role === 'admin' && userLink?.isOnlyAdmin) {
+                              hasRoleLinks = true;
+                              roleWarnings.push('Único administrador');
+                            }
+                            
+                            return hasRoleLinks ? (
+                              <div className="ml-1" title={`${roleWarnings.join(', ')}`}>
+                                <AlertTriangle size={12} className="text-amber-500" />
+                              </div>
+                            ) : null;
+                          })()}
                         </div>
                       ))}
                       
@@ -343,6 +754,7 @@ const ManageUsers = () => {
                           }}
                           className="text-xs border border-slate-300 dark:border-slate-600 rounded px-2 py-1 dark:bg-slate-700 dark:text-white"
                           defaultValue=""
+                          title="Agregar rol al usuario"
                         >
                           <option value="">+ Agregar rol</option>
                           {getAvailableRoles(user.role || []).map(role => (

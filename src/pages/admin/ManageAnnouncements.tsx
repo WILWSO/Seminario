@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Plus, Edit, Trash, ArrowLeft, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../config/supabase';
@@ -17,6 +18,8 @@ interface Announcement {
 const ManageAnnouncements = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useNotifications();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -29,6 +32,16 @@ const ManageAnnouncements = () => {
 
   // Reference for the title input to focus it when creating a new announcement
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Check if we're on the create route
+  useEffect(() => {
+    if (location.pathname === '/admin/announcements/create') {
+      setIsCreating(true);
+      setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 100);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -148,6 +161,10 @@ const ManageAnnouncements = () => {
         );
 
         setIsCreating(false);
+        // If we're on the create route, navigate back to announcements list
+        if (location.pathname === '/admin/announcements/create') {
+          navigate('/admin/Dashboard'); // Navigate to a default route, e.g., admin dashboard
+        }
       }
 
       setFormData({ title: '', content: '' });
@@ -210,6 +227,10 @@ const ManageAnnouncements = () => {
     setFormData({ title: '', content: '' });
     setIsCreating(false);
     setEditingId(null);
+    // If we're on the create route, navigate back to announcements list
+    if (location.pathname === '/admin/announcements/create') {
+      navigate('/admin/Dashboard'); // Navigate to a default route, e.g., admin dashboard
+    }
   };
 
   if (isLoading && announcements.length === 0) {

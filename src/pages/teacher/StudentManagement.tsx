@@ -10,6 +10,7 @@ import StudentList from '../../components/StudentList';
 interface Course {
   id: string;
   name: string;
+  course_code: string;
   description: string;
   credits: number;
   students_count: number;
@@ -56,6 +57,7 @@ const StudentManagement = () => {
       setCourse({
         id: courseData.id,
         name: courseData.name,
+        course_code: courseData.course_code || '',
         description: courseData.description || '',
         credits: courseData.credits,
         students_count: courseData.enrollments?.length || 0,
@@ -121,7 +123,7 @@ const StudentManagement = () => {
         </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-            Estudiantes: {course.name}
+            Estudiantes: {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
             Gestione los estudiantes y calificaciones de su curso
@@ -134,7 +136,7 @@ const StudentManagement = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-2">
-              {course.name}
+              {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
             </h2>
             <p className="text-slate-600 dark:text-slate-400 mb-2">
               {course.description}

@@ -12,6 +12,7 @@ interface Course {
   description: string;
   progress: number;
   teacher_name: string;
+  course_code: string;
   image_url?: string;
 }
 
@@ -23,6 +24,16 @@ interface Announcement {
   author: string;
 }
 
+interface Assignment {
+  id: string;
+  title: string;
+  due_date: string;
+  course_id: string;
+  course_name: string;
+  course_code: string;
+  days_remaining: number;
+}
+
 const StudentDashboard = () => {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -31,6 +42,7 @@ const StudentDashboard = () => {
   const [periods, setPeriods] = useState<string[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
   const [recentWithdrawals, setRecentWithdrawals] = useState<any[]>([]);
+  const [nextAssignment, setNextAssignment] = useState<Assignment | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -122,12 +134,51 @@ const StudentDashboard = () => {
               teacher_name: course.teacher?.name ||
                 `${course.teacher?.first_name || ''} ${course.teacher?.last_name || ''}`.trim() ||
                 'Professor',
+              course_code: course.course_code || '',
               image_url: course.image_url
             };
           })
         );
 
         setCourses(coursesWithProgress);
+
+        // Buscar próxima evaluación
+        const enrolledCourseIds = (enrollmentsData || []).map((enrollment: any) => enrollment.course_id);
+        
+        if (enrolledCourseIds.length > 0) {
+          const { data: assignmentsData, error: assignmentsError } = await supabase
+            .from('assignments')
+            .select(`
+              id,
+              title,
+              due_date,
+              course_id,
+              course:courses(name, course_code)
+            `)
+            .in('course_id', enrolledCourseIds)
+            .gte('due_date', new Date().toISOString())
+            .eq('is_active', true)
+            .order('due_date', { ascending: true })
+            .limit(1);
+
+          if (!assignmentsError && assignmentsData && assignmentsData.length > 0) {
+            const assignment = assignmentsData[0];
+            const dueDate = new Date(assignment.due_date);
+            const today = new Date();
+            const timeDiff = dueDate.getTime() - today.getTime();
+            const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+            setNextAssignment({
+              id: assignment.id,
+              title: assignment.title,
+              due_date: assignment.due_date,
+              course_id: assignment.course_id,
+              course_name: (assignment.course as any)?.name || 'Curso sin nombre',
+              course_code: (assignment.course as any)?.course_code || '',
+              days_remaining: daysRemaining
+            });
+          }
+        }
 
         // Buscar anúncios recentes
         const { data: announcementsData, error: announcementsError } = await supabase
@@ -190,33 +241,7 @@ const StudentDashboard = () => {
             Ver todos los cursos
           </Link>
         </div>
-      </div>
-
-      {/* Filtro por período */}
-      {periods.length > 0 && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Filtrar por período
-              </label>
-              <select
-                title='Filtrar por período'
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="all">Todos los períodos</option>
-                {periods.map(period => (
-                  <option key={period} value={period}>
-                    {period}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>      
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -252,7 +277,10 @@ const StudentDashboard = () => {
                 Progreso promedio
               </h3>
               <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                {Math.round(courses.reduce((sum, course) => sum + course.progress, 0) / courses.length)}%
+                {courses.length > 0 
+                  ? Math.round(courses.reduce((sum, course) => sum + course.progress, 0) / courses.length)
+                  : 0
+                }%
               </p>
             </div>
           </div>
@@ -271,12 +299,50 @@ const StudentDashboard = () => {
                 Próximo examen
               </h3>
               <p className="text-2xl font-semibold text-slate-800 dark:text-white">
-                15 días
+                {nextAssignment 
+                  ? nextAssignment.days_remaining > 0 
+                    ? `${nextAssignment.days_remaining} días` 
+                    : nextAssignment.days_remaining === 0 
+                      ? 'Hoy' 
+                      : 'Vencido'
+                  : 'Sin exámenes'
+                }
               </p>
+              {nextAssignment && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {nextAssignment.title} - {nextAssignment.course_code ? `${nextAssignment.course_code} - ${nextAssignment.course_name}` : nextAssignment.course_name}
+                </p>
+              )}
             </div>
           </div>
         </motion.div>
       </div>
+      
+      {/* Filtro por período */}
+      {periods.length > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Filtrar por período
+              </label>
+              <select
+                title='Filtrar por período'
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+              >
+                <option value="all">Todos los períodos</option>
+                {periods.map(period => (
+                  <option key={period} value={period}>
+                    {period}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent Courses */}
       <div>
@@ -292,7 +358,7 @@ const StudentDashboard = () => {
                 whileHover={{ y: -5 }}
                 className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden"
               >
-                <div className="h-32 bg-cover bg-center"
+                <div className="h-32 bg-cover bg-center bg-gray-200 dark:bg-gray-700"
                   style={{
                     backgroundImage: `url(${course.image_url || 'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2'})`
                   }}>
@@ -300,7 +366,7 @@ const StudentDashboard = () => {
                 </div>
                 <div className="p-6">
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
-                    {course.name}
+                    {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
                   </h3>
                   <p className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
                     {course.description}
@@ -325,7 +391,7 @@ const StudentDashboard = () => {
                     </div>
                     <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-sky-500"
+                        className="h-full bg-sky-500 transition-all duration-300"
                         style={{ width: `${course.progress}%` }}
                       ></div>
                     </div>

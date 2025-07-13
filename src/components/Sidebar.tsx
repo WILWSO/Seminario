@@ -68,13 +68,15 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
     student: [
       { path: '/student/dashboard', icon: <Home size={20} />, label: 'Inicio' },
       { path: '/student/courses', icon: <BookOpen size={20} />, label: 'Cursos' },
+      { path: '/student/assignments', icon: <FileText size={20} />, label: 'Mis Evaluaciones' },
       { path: '/student/progress', icon: <BarChart size={20} />, label: 'Mi Progreso' },
+      { path: '/student/grades', icon: <GraduationCap size={20} />, label: 'Mis Notas' },
     ],
     teacher: [
       { path: '/teacher/dashboard', icon: <Home size={20} />, label: 'Inicio' },
       { path: '/teacher/courses', icon: <BookOpen size={20} />, label: 'Administrar Contenido' },
       { path: '/teacher/assignments', icon: <FileText size={20} />, label: 'Evaluaciones' },
-      { path: '/teacher/grades', icon: <FileText size={20} />, label: 'Calificaciones' },
+      { path: '/teacher/managegrades', icon: <GraduationCap size={20} />, label: 'Historial de Notas' },
     ],
     admin: [
       { path: '/admin/dashboard', icon: <Home size={20} />, label: 'Inicio' },
@@ -206,7 +208,7 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
                   {availableRoles.map((role) => (
                     <button
                       key={role}
-                      onClick={() => handleRoleChange(role)}
+                      onClick={() => handleRoleChange(role as 'student' | 'teacher' | 'admin')}
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition ${
                         selectedRole === role 
                           ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400' 

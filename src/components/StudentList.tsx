@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../config/supabase';
 import { User, GraduationCap, Mail, Calendar, Award, FileText, Loader2 } from 'lucide-react';
 
 interface Student {
   id: string;
+  user_id?: string;
   status: string | null;
   final_grade: number | null;
   observations: string | null;
@@ -15,7 +16,7 @@ interface Student {
     first_name: string | null;
     last_name: string | null;
     email: string;
-  };
+  } | null;
 }
 
 interface StudentListProps {
@@ -40,12 +41,13 @@ export default function StudentList({ courseId }: StudentListProps) {
         .from('enrollments')
         .select(`
           id,
+          user_id,
           status,
           final_grade,
           observations,
           enrollment_date,
           completion_date,
-          user:users!enrollments_user_id_fkey(
+          user:users(
             id, 
             name, 
             first_name, 
@@ -61,7 +63,60 @@ export default function StudentList({ courseId }: StudentListProps) {
         throw enrollmentsError;
       }
 
-      setStudents(enrollmentsData || []);
+      // Transformar los datos para asegurar la estructura correcta
+      const transformedStudents = (enrollmentsData || []).map((enrollment: any) => {
+        const user = Array.isArray(enrollment.user) ? enrollment.user[0] : enrollment.user;
+        
+        // Log warning si user es null con más detalles
+        if (!user) {
+          console.warn('Student enrollment without user data:', {
+            enrollmentId: enrollment.id,
+            userId: enrollment.user_id,
+            enrollmentDate: enrollment.enrollment_date,
+            status: enrollment.status
+          });
+        }
+        
+        return {
+          id: enrollment.id,
+          user_id: enrollment.user_id,
+          status: enrollment.status,
+          final_grade: enrollment.final_grade,
+          observations: enrollment.observations,
+          enrollment_date: enrollment.enrollment_date,
+          completion_date: enrollment.completion_date,
+          user: user
+        };
+      });
+
+      // Contar estudiantes con problemas de datos
+      const studentsWithoutUser = transformedStudents.filter(s => !s.user).length;
+      const validStudents = transformedStudents.filter(s => s.user).length;
+      
+      console.log(`StudentList: ${validStudents} estudiantes válidos, ${studentsWithoutUser} con datos faltantes`);
+
+      // Si hay estudiantes sin datos de usuario, intentar obtener información adicional
+      if (studentsWithoutUser > 0) {
+        const orphanedEnrollments = transformedStudents.filter(s => !s.user);
+        for (const enrollment of orphanedEnrollments) {
+          if (enrollment.user_id) {
+            // Verificar si el usuario existe en la tabla users
+            const { data: userCheck, error: userError } = await supabase
+              .from('users')
+              .select('id, name, first_name, last_name, email')
+              .eq('id', enrollment.user_id)
+              .single();
+            
+            if (userError) {
+              console.warn(`Usuario ${enrollment.user_id} no encontrado en la tabla users:`, userError);
+            } else {
+              console.log(`Usuario ${enrollment.user_id} existe pero no se cargó en la consulta:`, userCheck);
+            }
+          }
+        }
+      }
+
+      setStudents(transformedStudents);
     } catch (err) {
       console.error('Error fetching students:', err);
       setError('Failed to load students');
@@ -72,10 +127,16 @@ export default function StudentList({ courseId }: StudentListProps) {
 
   const getStudentDisplayName = (student: Student) => {
     const { user } = student;
+    
+    // Verificar si user existe
+    if (!user) {
+      return 'Usuario no encontrado';
+    }
+    
     if (user.first_name && user.last_name) {
       return `${user.first_name} ${user.last_name}`;
     }
-    return user.name || user.email;
+    return user.name || user.email || 'Sin nombre';
   };
 
   const getStatusColor = (status: string | null) => {
@@ -136,16 +197,43 @@ export default function StudentList({ courseId }: StudentListProps) {
 
   return (
     <div className="space-y-4">
+      {/* Mensaje de advertencia si hay estudiantes con datos faltantes */}
+      {students.some(student => student.user === null) && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">Problemas de datos detectados</h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>
+                  {students.filter(s => !s.user).length} estudiante(s) matriculado(s) no tienen datos de usuario asociados.
+                  Esto puede indicar usuarios eliminados o problemas de integridad de datos.
+                </p>
+                <p className="mt-1 text-xs">
+                  Revisa la consola del navegador para más detalles sobre los registros problemáticos.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="bg-white shadow-sm rounded-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-medium text-gray-900 flex items-center">
             <User className="w-5 h-5 mr-2" />
-            Estudiantes Matriculados ({students.length})
+            Estudiantes Matriculados ({students.filter(student => student.user !== null).length})
           </h3>
         </div>
         
         <div className="divide-y divide-gray-200">
-          {students.map((student) => (
+          {students
+            .filter(student => student.user !== null) // Filtrar estudiantes sin usuario
+            .map((student) => (
             <div key={student.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
@@ -162,7 +250,7 @@ export default function StudentList({ courseId }: StudentListProps) {
                       <div className="flex items-center space-x-4 mt-1">
                         <p className="text-sm text-gray-500 flex items-center">
                           <Mail className="w-4 h-4 mr-1" />
-                          {student.user.email}
+                          {student.user?.email || 'Email no disponible'}
                         </p>
                         <p className="text-sm text-gray-500 flex items-center">
                           <Calendar className="w-4 h-4 mr-1" />

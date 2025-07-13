@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Award, Clock, CheckCircle, Circle, BarChart3, TrendingUp, Calendar, FileText, CheckSquare, XSquare } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Award, Clock, CheckCircle, BarChart3, TrendingUp, Calendar, FileText, CheckSquare, XSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
@@ -9,14 +10,14 @@ interface EnrolledCourse {
   name: string;
   description: string;
   credits: number;
-  period?: string;
+  period?: string | null;
+  course_code: string;
   teacher_name: string;
   enrollment_date: string;
-  period: string | null;
-  status: string | null;
-  final_grade: number | null;
-  observations: string | null;
-  completion_date: string | null;
+  status: 'in_progress' | 'completed' | 'not_started';
+  final_grade?: number | null;
+  observations?: string | null;
+  completion_date?: string | null;
   image_url?: string;
   progress: {
     total_modules: number;
@@ -35,10 +36,6 @@ interface EnrolledCourse {
     graded_at: string;
   }[];
   average_grade: number;
-  status: 'in_progress' | 'completed' | 'not_started';
-  final_grade?: number;
-  observations?: string;
-  completion_date?: string;
 }
 
 interface OverallStats {
@@ -68,7 +65,6 @@ const Progress = () => {
     graded_assignments: 0
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
   const [periods, setPeriods] = useState<string[]>([]);
 
@@ -98,6 +94,7 @@ const Progress = () => {
             credits,
             image_url,
             period,
+            course_code,
             teacher:users!courses_teacher_id_fkey(name, first_name, last_name),
             modules(
               id,
@@ -158,7 +155,6 @@ const Progress = () => {
       const processedCourses: EnrolledCourse[] = (enrollmentsData || []).map((enrollment: any) => {
         const course = enrollment.course;
         const modules = course.modules || [];
-        const assignments = course.assignments || [];
         
         // Calcular progresso baseado em lições completadas
         const totalLessons = modules.reduce((sum: number, module: any) => 
@@ -210,6 +206,7 @@ const Progress = () => {
           description: course.description || '',
           credits: course.credits,
           period: course.period,
+          course_code: course.course_code || '',
           teacher_name: course.teacher?.name || 
                       `${course.teacher?.first_name || ''} ${course.teacher?.last_name || ''}`.trim() || 
                       'Profesor',
@@ -250,7 +247,7 @@ const Progress = () => {
         allGrades.reduce((sum, grade) => sum + grade.percentage, 0) / allGrades.length : 0;
 
       // Contar total de avaliações disponíveis
-      const { data: assignmentsCount, error: assignmentsCountError } = await supabase
+      const { count: totalAssignments, error: assignmentsCountError } = await supabase
         .from('assignments')
         .select('id', { count: 'exact' })
         .in('course_id', processedCourses.map(c => c.id));
@@ -265,7 +262,7 @@ const Progress = () => {
         completed_credits: completedCredits,
         approved_credits: approvedCredits,
         overall_average: overallAverage,
-        total_assignments: assignmentsCount.count || 0,
+        total_assignments: totalAssignments || 0,
         graded_assignments: allGrades.length
       });
 
@@ -273,32 +270,6 @@ const Progress = () => {
       console.error('Error fetching student progress:', error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'not_started':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'Completado';
-      case 'in_progress':
-        return 'En progreso';
-      case 'not_started':
-        return 'No iniciado';
-      default:
-        return 'Desconocido';
     }
   };
 
@@ -463,6 +434,7 @@ const Progress = () => {
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+              title="Filtrar por período"
             >
               <option value="all">Todos los períodos</option>
               {periods.map(period => (
@@ -499,12 +471,19 @@ const Progress = () => {
                       />
                     </div>
                     <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-slate-800 dark:text-white mb-1">
-                        {course.name}
-                      </h3>
+                      <Link 
+                        to={`/student/courses/${course.id}`}
+                        className="block group"
+                        title={`Ir a los detalles del curso ${course.name}`}
+                      >
+                        <h3 className="text-xl font-semibold text-slate-800 dark:text-white mb-1 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors duration-200 cursor-pointer">
+                          {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
+                        </h3>
+                      </Link>
                       <p className="text-slate-600 dark:text-slate-400 text-sm mb-2">
-                        Profesor: {course.teacher_name} • {course.credits} créditos
-                        {course.period && <span> • Período: {course.period}</span>}
+                        <span className="font-medium">Profesor:</span> {course.teacher_name} • 
+                        <span className="font-medium"> {course.credits} créditos</span>
+                        {course.period && <span> • <span className="font-medium">Período:</span> {course.period}</span>}
                       </p>
                       <div className="flex items-center space-x-2">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center ${getEnrollmentStatusColor(course)}`}>
@@ -523,46 +502,60 @@ const Progress = () => {
                   {/* Progreso del Curso */}
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-sm mb-2">
-                      <span className="text-slate-600 dark:text-slate-400">Progreso del curso</span>
-                      <span className="font-medium text-slate-800 dark:text-white">
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">Progreso del curso</span>
+                      <span className="font-semibold text-slate-800 dark:text-white">
                         {course.progress.percentage}%
                       </span>
                     </div>
                     <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-gradient-to-r from-sky-500 to-blue-600 rounded-full transition-all duration-300" 
+                        className="h-full bg-gradient-to-r from-sky-500 to-blue-600 rounded-full transition-all duration-500" 
                         style={{ width: `${course.progress.percentage}%` }}
                       ></div>
                     </div>
-                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-500 mt-1">
-                      <span>
-                        {course.progress.completed_lessons}/{course.progress.total_lessons} lecciones
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-500 mt-2">
+                      <span className="flex items-center">
+                        <CheckCircle size={12} className="mr-1" />
+                        {course.progress.completed_lessons}/{course.progress.total_lessons} lecciones completadas
                       </span>
-                      <span>
-                        {course.progress.completed_modules}/{course.progress.total_modules} módulos
+                      <span className="flex items-center">
+                        <BookOpen size={12} className="mr-1" />
+                        {course.progress.completed_modules}/{course.progress.total_modules} módulos completados
                       </span>
                     </div>
                   </div>
 
                   {/* Información de Matrícula */}
                   <div className="text-xs text-slate-500 dark:text-slate-500 mb-4">
-                    <Calendar size={12} className="inline mr-1" />
-                    Matriculado el {new Date(course.enrollment_date).toLocaleDateString('es-AR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
+                    <div className="flex items-center mb-1">
+                      <Calendar size={12} className="mr-1" />
+                      <span>Matriculado el {new Date(course.enrollment_date).toLocaleDateString('es-AR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}</span>
+                    </div>
                     {course.completion_date && (
-                      <>
-                        <span className="mx-2">•</span>
-                        <Clock size={12} className="inline mr-1" />
-                        Completado el {new Date(course.completion_date).toLocaleDateString('es-AR', {
+                      <div className="flex items-center">
+                        <Clock size={12} className="mr-1" />
+                        <span>Completado el {new Date(course.completion_date).toLocaleDateString('es-AR', {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric'
-                        })}
-                      </>
+                        })}</span>
+                      </div>
                     )}
+                  </div>
+
+                  {/* Botón de acceso rápido */}
+                  <div className="mb-4">
+                    <Link
+                      to={`/student/courses/${course.id}`}
+                      className="inline-flex items-center px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700 transition-colors duration-200"
+                    >
+                      <BookOpen size={16} className="mr-2" />
+                      {course.status === 'completed' ? 'Revisar curso' : 'Continuar aprendiendo'}
+                    </Link>
                   </div>
 
                   {/* Observaciones del profesor */}

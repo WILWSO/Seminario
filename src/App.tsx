@@ -11,6 +11,8 @@ import AdminDashboard from './pages/admin/Dashboard';
 import CoursesList from './pages/student/CoursesList';
 import CourseDetails from './pages/student/CourseDetails';
 import Progress from './pages/student/Progress';
+import StudentGrades from './pages/student/Grades';
+import StudentAssignments from './pages/student/Assignments';
 import ManageCourses from './pages/teacher/ManageCourses';
 import ManageGrades from './pages/teacher/ManageGrades';
 import ManageAnnouncements from './pages/admin/ManageAnnouncements';
@@ -19,6 +21,7 @@ import ManageUsers from './pages/admin/ManageUsers';
 import Settings from './pages/admin/Settings';
 import NotFound from './pages/NotFound';
 import ManageAssignments from './pages/teacher/ManageAssignments';
+import AssignmentSubmissions from './pages/teacher/AssignmentSubmissions';
 import CourseManagement from './pages/teacher/CourseManagement';
 import StudentManagement from './pages/teacher/StudentManagement';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -69,8 +72,10 @@ function App() {
               <Route path="student" element={<ProtectedRoute role="student" />}>
                 <Route path="dashboard" element={<StudentDashboard />} />
                 <Route path="courses" element={<CoursesList />} />
-                <Route path="courses/:id" element={<CourseDetails />} />
+                <Route path="courses/:courseId" element={<CourseDetails />} />
+                <Route path="assignments" element={<StudentAssignments />} />
                 <Route path="progress" element={<Progress />} />
+                <Route path="grades" element={<StudentGrades />} />
               </Route>
 
               {/* Teacher Routes */}
@@ -80,7 +85,9 @@ function App() {
                 <Route path="courses/:id" element={<CourseManagement />} />
                 <Route path="students/:id" element={<StudentManagement />} />
                 <Route path="assignments" element={<ManageAssignments />} />
-                <Route path="grades" element={<ManageGrades />} />
+                <Route path="assignments/:assignmentId/submissions" element={<AssignmentSubmissions />} />
+                <Route path="managegrades" element={<ManageGrades />} />
+                <Route path="managegrades/:assignmentId" element={<ManageGrades />} />
               </Route>
 
               {/* Admin Routes */}
@@ -88,6 +95,7 @@ function App() {
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="courses" element={<AdminManageCourses />} />
                 <Route path="announcements" element={<ManageAnnouncements />} />
+                <Route path="announcements/create" element={<ManageAnnouncements />} />
                 <Route path="users" element={<ManageUsers />} />
                 <Route path="settings" element={<Settings />} />
               </Route>

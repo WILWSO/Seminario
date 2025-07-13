@@ -7,7 +7,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ role }: ProtectedRouteProps) => {
   const { user, isLoading, isAuthenticated } = useAuth();
-  
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -15,17 +15,17 @@ const ProtectedRoute = ({ role }: ProtectedRouteProps) => {
       </div>
     );
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  
+
   console.log('ProtectedRoute:', { isAuthenticated, user, isLoading });
-  
+
   // Verificar se o usuário tem o role necessário
   if (!user?.role || user.role.length === 0 || !user.role.includes(role)) {
     // Redirect to appropriate dashboard based on role
@@ -36,10 +36,10 @@ const ProtectedRoute = ({ role }: ProtectedRouteProps) => {
     } else if (user?.role && user.role.includes('admin')) {
       return <Navigate to="/admin/dashboard" replace />;
     }
-    
+
     return <Navigate to="/" replace />;
   }
-  
+
   return <Outlet />;
 };
 

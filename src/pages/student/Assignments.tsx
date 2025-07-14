@@ -294,18 +294,18 @@ const StudentAssignments = () => {
       return;
     }
 
-    // Para evaluaciones de tipo file_upload, permitir reemplazar si no ha sido calificada
+    // Para evaluaciones de tipo file_upload, no permitir acceso si ya hay una submission
     if (assignment.assignment_type === 'file_upload') {
-      if (assignment.has_submission && assignment.submission_graded) {
+      if (assignment.has_submission) {
         showError(
-          'Evaluación ya calificada',
-          'Esta evaluación ya ha sido calificada por el profesor. No puedes reemplazar el archivo.',
+          'Archivo ya enviado',
+          'Ya has enviado un archivo para esta evaluación. Usa el botón "Reemplazar" si necesitas cambiar el archivo.',
           5000
         );
         return;
       }
       
-      // Abrir modal para subir archivo (permite reemplazar)
+      // Solo abrir modal si no hay submission
       setSelectedAssignment(assignment);
       setUploadModalOpen(true);
       return;
@@ -832,12 +832,12 @@ const StudentAssignments = () => {
                   disabled={
                     (assignment.is_completed && assignment.assignment_type !== 'file_upload') || 
                     !assignment.is_active ||
-                    (assignment.assignment_type === 'file_upload' && assignment.has_submission && assignment.submission_graded)
+                    (assignment.assignment_type === 'file_upload' && assignment.has_submission)
                   }
                   className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     (assignment.is_completed && assignment.assignment_type !== 'file_upload') || 
                     !assignment.is_active ||
-                    (assignment.assignment_type === 'file_upload' && assignment.has_submission && assignment.submission_graded)
+                    (assignment.assignment_type === 'file_upload' && assignment.has_submission)
                       ? 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-700 dark:text-slate-400'
                       : 'bg-sky-500 text-white hover:bg-sky-600'
                   }`}
@@ -859,13 +859,21 @@ const StudentAssignments = () => {
                     </>
                   ) : assignment.assignment_type === 'file_upload' ? (
                     <>
-                      <Upload className="w-4 h-4 mr-2" />
                       {assignment.has_submission && assignment.submission_graded ? (
-                        'Calificado'
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Calificado
+                        </>
                       ) : assignment.has_submission ? (
-                        'Reemplazar Archivo'
+                        <>
+                          <Clock className="w-4 h-4 mr-2" />
+                          Esperando Calificación
+                        </>
                       ) : (
-                        'Subir Archivo'
+                        <>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Subir Archivo
+                        </>
                       )}
                     </>
                   ) : (

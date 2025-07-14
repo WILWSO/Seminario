@@ -4,6 +4,12 @@ import { BookOpen, Clock, BarChart, Bell, Calendar, LogOut } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
 import { motion } from 'framer-motion';
+import { 
+  CacheProvider 
+} from '../../components/ui';
+import { 
+  useCache
+} from '../../hooks';
 
 interface Course {
   id: string;
@@ -34,8 +40,11 @@ interface Assignment {
   days_remaining: number;
 }
 
-const StudentDashboard = () => {
+// Componente interno con funcionalidad original + cache
+const StudentDashboardContent = () => {
   const { user } = useAuth();
+  const cache = useCache(); // Solo agregamos cache
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [nextAssignment, setNextAssignment] = useState<Assignment | null>(null);
@@ -43,7 +52,7 @@ const StudentDashboard = () => {
   const [periods, setPeriods] = useState<string[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
   
-  // Estados de carga separados
+  // Estados de carga separados (mantenemos el comportamiento original)
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(true);
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(true);
@@ -68,8 +77,24 @@ const StudentDashboard = () => {
   }, [user?.id]);
 
   const fetchCourses = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingCourses(true);
+
+      // Cache simple para cursos
+      const cacheKey = `courses_${user.id}`;
+      const cachedCourses = cache.get<Course[]>(cacheKey);
+      if (cachedCourses) {
+        setCourses(cachedCourses);
+        setIsLoadingCourses(false);
+        // Obtener períodos únicos del cache
+        const uniquePeriods = [...new Set(cachedCourses
+          .map(course => course.period)
+          .filter((period): period is string => Boolean(period)))];
+        setPeriods(uniquePeriods);
+        return;
+      }
       
       // Buscar cursos matriculados con consulta optimizada
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
@@ -96,7 +121,7 @@ const StudentDashboard = () => {
       // Extraer períodos únicos
       const uniquePeriods = [...new Set((enrollmentsData || [])
         .map((enrollment: any) => enrollment.course?.period)
-        .filter(Boolean))];
+        .filter((period): period is string => Boolean(period)))];
       setPeriods(uniquePeriods);
 
       // Obtener IDs de cursos para buscar lecciones
@@ -164,6 +189,8 @@ const StudentDashboard = () => {
       });
 
       setCourses(coursesWithProgress);
+      // Cache por 2 minutos
+      cache.set(cacheKey, coursesWithProgress, 2 * 60 * 1000);
     } catch (error) {
       console.error('Error fetching courses:', error);
       setCourses([]);
@@ -175,6 +202,15 @@ const StudentDashboard = () => {
   const fetchAnnouncements = async () => {
     try {
       setIsLoadingAnnouncements(true);
+
+      // Cache para anuncios
+      const cacheKey = 'announcements_recent';
+      const cachedAnnouncements = cache.get<Announcement[]>(cacheKey);
+      if (cachedAnnouncements) {
+        setAnnouncements(cachedAnnouncements);
+        setIsLoadingAnnouncements(false);
+        return;
+      }
       
       const { data: announcementsData, error: announcementsError } = await supabase
         .from('announcements')
@@ -191,7 +227,7 @@ const StudentDashboard = () => {
 
       if (announcementsError) throw announcementsError;
 
-      setAnnouncements((announcementsData || []).map((ann: any) => ({
+      const processedAnnouncements = (announcementsData || []).map((ann: any) => ({
         id: ann.id,
         title: ann.title,
         content: ann.content,
@@ -199,7 +235,11 @@ const StudentDashboard = () => {
         author: ann.author?.name ||
           `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() ||
           'Admin'
-      })));
+      }));
+
+      setAnnouncements(processedAnnouncements);
+      // Cache por 5 minutos
+      cache.set(cacheKey, processedAnnouncements, 5 * 60 * 1000);
     } catch (error) {
       console.error('Error fetching announcements:', error);
       setAnnouncements([]);
@@ -209,8 +249,19 @@ const StudentDashboard = () => {
   };
 
   const fetchAssignments = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingAssignments(true);
+
+      // Cache para tareas
+      const cacheKey = `assignments_${user.id}`;
+      const cachedAssignment = cache.get<Assignment | null>(cacheKey);
+      if (cachedAssignment !== undefined) {
+        setNextAssignment(cachedAssignment);
+        setIsLoadingAssignments(false);
+        return;
+      }
       
       // Obtener IDs de cursos matriculados
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
@@ -246,7 +297,7 @@ const StudentDashboard = () => {
           const timeDiff = dueDate.getTime() - today.getTime();
           const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-          setNextAssignment({
+          const nextAssignmentData = {
             id: assignment.id,
             title: assignment.title,
             due_date: assignment.due_date,
@@ -254,7 +305,14 @@ const StudentDashboard = () => {
             course_name: (assignment.course as any)?.name || 'Curso sin nombre',
             course_code: (assignment.course as any)?.course_code || '',
             days_remaining: daysRemaining
-          });
+          };
+
+          setNextAssignment(nextAssignmentData);
+          // Cache por 2 minutos
+          cache.set(cacheKey, nextAssignmentData, 2 * 60 * 1000);
+        } else {
+          setNextAssignment(null);
+          cache.set(cacheKey, null, 2 * 60 * 1000);
         }
       }
     } catch (error) {
@@ -266,8 +324,19 @@ const StudentDashboard = () => {
   };
 
   const fetchWithdrawals = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingWithdrawals(true);
+
+      // Cache para desistencias
+      const cacheKey = `withdrawals_${user.id}`;
+      const cachedWithdrawals = cache.get<any[]>(cacheKey);
+      if (cachedWithdrawals) {
+        setRecentWithdrawals(cachedWithdrawals);
+        setIsLoadingWithdrawals(false);
+        return;
+      }
       
       const { data: withdrawalsData, error: withdrawalsError } = await supabase
         .from('enrollments')
@@ -283,7 +352,10 @@ const StudentDashboard = () => {
         .limit(3);
 
       if (!withdrawalsError) {
-        setRecentWithdrawals(withdrawalsData || []);
+        const withdrawals = withdrawalsData || [];
+        setRecentWithdrawals(withdrawals);
+        // Cache por 2 minutos
+        cache.set(cacheKey, withdrawals, 2 * 60 * 1000);
       }
     } catch (error) {
       console.error('Error fetching withdrawals:', error);
@@ -654,6 +726,15 @@ const StudentDashboard = () => {
         </div>
       )}
     </div>
+  );
+};
+
+// Componente principal con CacheProvider (única optimización visible)
+const StudentDashboard = () => {
+  return (
+    <CacheProvider>
+      <StudentDashboardContent />
+    </CacheProvider>
   );
 };
 

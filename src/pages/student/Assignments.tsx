@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import FileUploadModal from '../../components/FileUploadModal';
+import StudentFormModal from '../../components/StudentFormModal';
 import AssignmentFileService from '../../services/assignmentFileService';
 
 interface Assignment {
@@ -42,6 +43,7 @@ const StudentAssignments = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'overdue' | 'active' | 'inactive'>('all');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [formModalOpen, setFormModalOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
 
   useEffect(() => {
@@ -324,8 +326,12 @@ const StudentAssignments = () => {
     if (assignment.assignment_type === 'external_form' && assignment.external_form_url) {
       // Abrir formulario externo en nueva ventana
       window.open(assignment.external_form_url, '_blank');
+    } else if (assignment.assignment_type === 'form') {
+      // Abrir modal para formulario interno
+      setSelectedAssignment(assignment);
+      setFormModalOpen(true);
     } else {
-      // Evaluación tipo form - marcar como completada
+      // Evaluación tipo form sin preguntas - marcar como completada
       showError(
         'Evaluación interna',
         'Esta evaluación será completada directamente por el profesor. No requiere acción del estudiante.',
@@ -820,6 +826,41 @@ const StudentAssignments = () => {
                 </div>
               )}
 
+              {/* Mostrar información del formulario completado para evaluaciones de tipo form */}
+              {assignment.assignment_type === 'form' && assignment.is_completed && (
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-300" />
+                      <div>
+                        <p className="text-sm text-green-800 dark:text-green-300 font-medium">
+                          Formulario completado
+                        </p>
+                        <p className="text-xs text-green-600 dark:text-green-400">
+                          Calificado automáticamente
+                        </p>
+                        <p className="text-xs text-green-600 dark:text-green-400">
+                          Completado el {new Date(assignment.submitted_at!).toLocaleDateString('es-ES')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-green-800 dark:text-green-300">
+                          {assignment.score}/{assignment.max_score}
+                        </p>
+                        <p className="text-sm text-green-600 dark:text-green-400">
+                          {assignment.percentage?.toFixed(1)}%
+                        </p>
+                      </div>
+                      <span className="text-xs text-green-600 dark:text-green-400">
+                        ✓ Calificado Automáticamente
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between items-center">
                 <div className="text-sm text-slate-500 dark:text-slate-400">
                   <span>Tipo: {getTypeLabel(assignment.assignment_type)}</span>
@@ -856,6 +897,20 @@ const StudentAssignments = () => {
                     <>
                       <ExternalLink className="w-4 h-4 mr-2" /> 
                       Abrir Formulario 
+                    </>
+                  ) : assignment.assignment_type === 'form' ? (
+                    <>
+                      {assignment.is_completed ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Calificado Automáticamente
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Responder Formulario
+                        </>
+                      )}
                     </>
                   ) : assignment.assignment_type === 'file_upload' ? (
                     <>
@@ -929,6 +984,27 @@ const StudentAssignments = () => {
             setSelectedAssignment(null);
           }}
           assignment={selectedAssignment}
+          studentId={user?.id || ''}
+          onSubmissionComplete={handleSubmissionComplete}
+        />
+      )}
+
+      {/* Modal para formulario interno */}
+      {formModalOpen && selectedAssignment && (
+        <StudentFormModal
+          isOpen={formModalOpen}
+          onClose={() => {
+            setFormModalOpen(false);
+            setSelectedAssignment(null);
+          }}
+          assignment={{
+            id: selectedAssignment.id,
+            title: selectedAssignment.title,
+            description: selectedAssignment.description,
+            course_name: selectedAssignment.course_name,
+            max_score: selectedAssignment.max_score,
+            due_date: selectedAssignment.due_date
+          }}
           studentId={user?.id || ''}
           onSubmissionComplete={handleSubmissionComplete}
         />

@@ -27,14 +27,23 @@ interface Question {
 interface CreateAssignmentQuestionsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  assignmentId: string;
-  onSave: () => void;
+  assignmentId?: string; // Opcional para modo creación
+  assignmentData?: {
+    title: string;
+    description: string;
+    course_id: string;
+    due_date: string;
+    max_score: number;
+    is_active: boolean;
+  }; // Datos para crear nueva evaluación
+  onSave: (questions?: Question[]) => void;
 }
 
 const CreateAssignmentQuestionsModal = ({ 
   isOpen, 
   onClose, 
   assignmentId, 
+  assignmentData,
   onSave 
 }: CreateAssignmentQuestionsModalProps) => {
   const { showSuccess, showError } = useNotifications();
@@ -48,10 +57,24 @@ const CreateAssignmentQuestionsModal = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen && assignmentId) {
-      fetchData();
+    if (isOpen) {
+      if (assignmentId) {
+        // Modo edición: cargar datos existentes
+        fetchData();
+      } else if (assignmentData) {
+        // Modo creación: usar datos proporcionados
+        setAssignment({
+          id: 'new',
+          title: assignmentData.title,
+          description: assignmentData.description,
+          course_name: 'Curso seleccionado',
+          assignment_type: 'form'
+        });
+        setQuestions([]);
+        setIsLoading(false);
+      }
     }
-  }, [isOpen, assignmentId]);
+  }, [isOpen, assignmentId, assignmentData]);
 
   const fetchData = async () => {
     try {
@@ -308,6 +331,24 @@ const CreateAssignmentQuestionsModal = ({
         return;
       }
 
+      // Si es modo creación (sin assignmentId), devolver las preguntas al componente padre
+      if (!assignmentId) {
+        const formattedQuestions = questions.map((question, index) => ({
+          id: question.id,
+          question_text: question.question_text,
+          question_type: question.question_type,
+          options: question.question_type === 'multiple_choice' ? question.options.filter(opt => opt.trim() !== '') : [],
+          correct_answers: question.question_type === 'multiple_choice' ? question.correct_answers : [],
+          is_required: question.is_required,
+          max_points: question.max_points,
+          order_number: index
+        }));
+        
+        onSave(formattedQuestions);
+        return;
+      }
+
+      // Modo edición: guardar en la base de datos
       // Eliminar preguntas existentes
       console.log('Deleting existing questions...');
       const { error: deleteError } = await supabase
@@ -374,6 +415,15 @@ const CreateAssignmentQuestionsModal = ({
   };
 
   const handleExportForm = async () => {
+    if (!assignmentId) {
+      showError(
+        'No disponible',
+        'La exportación solo está disponible para evaluaciones guardadas.',
+        3000
+      );
+      return;
+    }
+
     try {
       setIsExporting(true);
       console.log('Exporting form for assignment:', assignmentId);
@@ -413,6 +463,15 @@ const CreateAssignmentQuestionsModal = ({
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!assignmentId) {
+      showError(
+        'No disponible',
+        'La importación solo está disponible para evaluaciones guardadas.',
+        3000
+      );
+      return;
+    }
 
     try {
       setIsImporting(true);

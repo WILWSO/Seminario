@@ -38,6 +38,7 @@ interface FormQuestion {
   question: string;
   type: 'text' | 'textarea' | 'multiple_choice' | 'single_choice';
   options?: string[];
+  correct_answers?: number[]; // Agregar respuestas correctas
   required: boolean;
   points: number;
 }
@@ -138,14 +139,10 @@ const ManageAssignments = () => {
 
     /// Validación específica para formularios internos vs externos
     if (formData.assignment_type === 'form') {
-      if (formData.form_questions.length === 0) {
-        showError(
-          'Preguntas requeridas', 
-          'Para formularios internos debe agregar al menos una pregunta.', 
-          4000
-        );
-        return;
-      }
+      // Para formularios internos, abrir el modal de preguntas
+      setSelectedAssignmentId(null); // Asegurar que esté limpio para nueva evaluación
+      setShowQuestionsModal(true);
+      return;
     } else if (formData.assignment_type === 'external_form') {
       if (!formData.external_form_url.trim()) {
         showError(
@@ -157,6 +154,7 @@ const ManageAssignments = () => {
       }
     }
 
+    // Para otros tipos de evaluaciones, continuar con el proceso normal
     try {
       setIsLoading(true);
 
@@ -197,7 +195,7 @@ const ManageAssignments = () => {
 
         showSuccess(
           'Evaluación creada',
-          'La evaluación se ha creado correctamente.',
+          'La evaluación se ha creada correctamente.',
           3000
         );
       }
@@ -285,43 +283,96 @@ const ManageAssignments = () => {
     setEditingAssignment(null);
   };
 
-  const addQuestion = () => {
-    const newQuestion: FormQuestion = {
-      id: Date.now().toString(),
-      question: '',
-      type: 'text',
-      required: true,
-      points: 10
-    };
-    setFormData({
-      ...formData,
-      form_questions: [...formData.form_questions, newQuestion]
-    });
-  };
-
-  const updateQuestion = (questionId: string, updates: Partial<FormQuestion>) => {
-    setFormData({
-      ...formData,
-      form_questions: formData.form_questions.map(q =>
-        q.id === questionId ? { ...q, ...updates } : q
-      )
-    });
-  };
-
-  const removeQuestion = (questionId: string) => {
-    setFormData({
-      ...formData,
-      form_questions: formData.form_questions.filter(q => q.id !== questionId)
-    });
-  };
-
   const handleCloseQuestionsModal = () => {
     setShowQuestionsModal(false);
     setSelectedAssignmentId(null);
   };
 
-  const handleQuestionsModalSave = () => {
-    fetchData(); // Refrescar datos después de guardar
+  const handleQuestionsModalSave = async (questions?: any[]) => {
+    // Si questions está definido, significa que venimos de crear una nueva evaluación
+    if (questions && formData.assignment_type === 'form') {
+      try {
+        setIsLoading(true);
+
+        // Convertir questions del modal al formato FormQuestion
+        const formQuestions: FormQuestion[] = questions.map(q => ({
+          id: q.id,
+          question: q.question_text,
+          type: q.question_type === 'multiple_choice' ? 'multiple_choice' : 'text',
+          options: q.options || [],
+          correct_answers: q.correct_answers || [], // Agregar respuestas correctas
+          required: q.is_required,
+          points: q.max_points
+        }));
+        
+        console.log('Questions received from modal:', questions);
+        console.log('Form questions to save:', formQuestions);
+
+        const assignmentData = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          external_form_url: formData.external_form_url.trim() || null,
+          course_id: formData.course_id,
+          assignment_type: formData.assignment_type,
+          due_date: formData.due_date || null,
+          max_score: formData.max_score,
+          form_questions: formQuestions,
+          file_instructions: null,
+          allowed_file_types: null,
+          max_file_size_mb: null,
+          is_active: formData.is_active
+        };
+
+        if (editingAssignment) {
+          const { error } = await supabase
+            .from('assignments')
+            .update(assignmentData)
+            .eq('id', editingAssignment.id);
+
+          if (error) throw error;
+          
+          showSuccess('Evaluación actualizada', 'La evaluación se ha actualizado exitosamente.', 3000);
+        } else {
+          const { error } = await supabase
+            .from('assignments')
+            .insert([assignmentData]);
+
+          if (error) throw error;
+          
+          showSuccess('Evaluación creada', 'La evaluación se ha creado exitosamente.', 3000);
+        }
+
+        // Limpiar formulario y cerrar modal
+        setFormData({
+          title: '',
+          description: '',
+          external_form_url: '',
+          course_id: '',
+          assignment_type: 'form',
+          due_date: '',
+          max_score: 100,
+          form_questions: [],
+          file_instructions: '',
+          allowed_file_types: ['pdf', 'doc', 'docx'],
+          max_file_size_mb: 10,
+          is_active: true
+        });
+        
+        setIsCreating(false);
+        setEditingAssignment(null);
+        fetchData();
+        
+      } catch (error) {
+        console.error('Error saving assignment:', error);
+        showError('Error', 'Hubo un error al guardar la evaluación. Intente nuevamente.', 4000);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Caso normal: solo refrescar datos
+      fetchData();
+    }
+    
     handleCloseQuestionsModal();
   };
 
@@ -537,155 +588,22 @@ const ManageAssignments = () => {
 
               {/* Configuración específica por tipo */}
               {formData.assignment_type === 'form' ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-md font-semibold text-slate-800 dark:text-white">
-                      Preguntas del formulario
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={addQuestion}
-                      className="inline-flex items-center px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition"
-                    >
-                      <Plus size={14} className="mr-1" />
-                      Agregar pregunta
-                    </button>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-shrink-0">
+                      <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                        Formulario Interno - Configuración de preguntas
+                      </h3>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                        Al hacer clic en "Crear Evaluación", se abrirá un modal para configurar las preguntas del formulario interno con calificación automática.
+                      </p>
+                    </div>
                   </div>
-
-                  {formData.form_questions.map((question, index) => (
-                    <div key={question.id} className="p-4 border border-slate-200 dark:border-slate-600 rounded-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-medium text-slate-800 dark:text-white">
-                          Pregunta {index + 1}
-                        </h4>
-                        <button
-                          title='Eliminar pregunta'
-                          type="button"
-                          onClick={() => removeQuestion(question.id)}
-                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                        >
-                          <Trash size={16} />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Pregunta *
-                          </label>
-                          <input 
-                            title='Pregunta del formulario'
-                            type="text"
-                            value={question.question}
-                            onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
-                            required
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Tipo de respuesta
-                          </label>
-                          <select
-                            title='Seleccionar tipo de respuesta'
-                            value={question.type}
-                            onChange={(e) => updateQuestion(question.id, { type: e.target.value as any })}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                          >
-                            <option value="text">Texto corto</option>
-                            <option value="textarea">Texto largo</option>
-                            <option value="single_choice">Opción única</option>
-                            <option value="multiple_choice">Opción múltiple</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Puntos
-                          </label>
-                          <input 
-                            title='Puntos asignados a la pregunta'
-                            type="number"
-                            value={question.points}
-                            onChange={(e) => updateQuestion(question.id, { points: parseInt(e.target.value) || 0 })}
-                            min="0"
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                          />
-                        </div>
-
-                        {(question.type === 'single_choice' || question.type === 'multiple_choice') && (
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                              Opciones* (una por línea)
-                            </label>
-                            <div className="space-y-2">
-                              {(question.options || []).map((option, optionIndex) => (
-                                <div key={optionIndex} className="flex items-center">
-                                  <input
-                                    type="text"
-                                    value={option}
-                                    onChange={(e) => {
-                                      const newOptions = [...(question.options || [])];
-                                      newOptions[optionIndex] = e.target.value;
-                                      updateQuestion(question.id, { options: newOptions });
-                                    }}
-                                    className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-                                    placeholder={`Opción ${optionIndex + 1}`}
-                                  />
-                                  <button
-                                    title='Eliminar opción'
-                                    type="button"
-                                    onClick={() => {
-                                      const newOptions = [...(question.options || [])];
-                                      newOptions.splice(optionIndex, 1);
-                                      updateQuestion(question.id, { options: newOptions });
-                                    }}
-                                    className="ml-2 p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-md transition"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                </div>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newOptions = [...(question.options || []), ''];
-                                  updateQuestion(question.id, { options: newOptions });
-                                }}
-                                className="inline-flex items-center px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition"
-                              >
-                                <Plus size={14} className="mr-1" />
-                                Agregar opción
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex items-center">
-                          <input
-                            title='Marcar pregunta como obligatoria'
-                            type="checkbox"
-                            checked={question.required}
-                            onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
-                            className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300 rounded"
-                          />                        <label className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
-                          Pregunta obligatoria
-                        </label>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {formData.form_questions.length === 0 && (
-                    <div className="text-center py-6 text-slate-500 dark:text-slate-400">
-                      <FileText size={24} className="mx-auto mb-2 opacity-50" />
-                      <p>No hay preguntas agregadas.</p>
-                      <p className="text-sm">Haga clic en "Agregar pregunta" para comenzar.</p>
-                    </div>
-                  )}
                 </div>
-              ) : (
+              ) : formData.assignment_type === 'file_upload' ? (
                 <div className="space-y-4">
                   <h3 className="text-md font-semibold text-slate-800 dark:text-white">
                     Configuración de subida de archivos
@@ -754,7 +672,7 @@ const ManageAssignments = () => {
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex items-center">
                 <input
@@ -959,11 +877,19 @@ const ManageAssignments = () => {
       </div>
 
       {/* Modal de creación de preguntas */}
-      {selectedAssignmentId && (
+      {showQuestionsModal && (
         <CreateAssignmentQuestionsModal
           isOpen={showQuestionsModal}
           onClose={handleCloseQuestionsModal}
-          assignmentId={selectedAssignmentId}
+          assignmentId={selectedAssignmentId || undefined}
+          assignmentData={formData.assignment_type === 'form' && !selectedAssignmentId ? {
+            title: formData.title,
+            description: formData.description,
+            course_id: formData.course_id,
+            due_date: formData.due_date,
+            max_score: formData.max_score,
+            is_active: formData.is_active
+          } : undefined}
           onSave={handleQuestionsModalSave}
         />
       )}

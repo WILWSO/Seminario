@@ -1,0 +1,19 @@
+/* Estilos para el modal de formulario de estudiante */
+.progress-bar {
+  height: 8px;
+  background-color: #2563eb;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+  width: var(--progress-width, 0%);
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+}
+
+.dark .progress-bar-container {
+  background-color: #4b5563;
+}

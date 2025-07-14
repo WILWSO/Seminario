@@ -1,5 +1,20 @@
-import { supabase } from '../config/supabase';
+import { supabase, isAuthError, handleAuthError } from '../config/supabase';
 import type { User, Course, Announcement } from '../config/supabase';
+
+// Wrapper for Supabase calls with automatic auth error handling
+export const withAuthErrorHandling = async <T>(
+  operation: () => Promise<T>
+): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isAuthError(error)) {
+      await handleAuthError(error);
+      throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+    }
+    throw error;
+  }
+};
 
 // Auth services
 export const authService = {
@@ -159,6 +174,7 @@ export const announcementService = {
           *,
           author:users!announcements_created_by_fkey(id, name)
         `)
+        .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -181,6 +197,7 @@ export const announcementService = {
           title,
           content,
           created_by: createdBy,
+          is_active: true
         },
       ])
       .select()
@@ -203,9 +220,30 @@ export const announcementService = {
   },
 
   async deleteAnnouncement(id: string) {
+    // Soft delete: just deactivate the announcement
+    const { error } = await supabase
+      .from('announcements')
+      .update({ is_active: false })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  async permanentDeleteAnnouncement(id: string) {
+    // Hard delete: permanently remove from database
     const { error } = await supabase
       .from('announcements')
       .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
+  async reactivateAnnouncement(id: string) {
+    // Reactivate a soft-deleted announcement
+    const { error } = await supabase
+      .from('announcements')
+      .update({ is_active: true })
       .eq('id', id);
 
     if (error) throw error;

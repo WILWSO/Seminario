@@ -38,6 +38,12 @@ interface Assignment {
   course_name: string;
   course_code: string;
   days_remaining: number;
+  is_submitted: boolean;
+  max_score: number;
+}
+
+interface AssignmentWithStatus extends Assignment {
+  status: 'pending' | 'due_today' | 'overdue' | 'submitted';
 }
 
 // Componente interno con funcionalidad original + cache
@@ -48,6 +54,7 @@ const StudentDashboardContent = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [nextAssignment, setNextAssignment] = useState<Assignment | null>(null);
+  const [allPendingAssignments, setAllPendingAssignments] = useState<AssignmentWithStatus[]>([]);
   const [recentWithdrawals, setRecentWithdrawals] = useState<any[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
@@ -202,16 +209,26 @@ const StudentDashboardContent = () => {
   const fetchAnnouncements = async () => {
     try {
       setIsLoadingAnnouncements(true);
+      console.log('Fetching announcements...'); // Debug
 
       // Cache para anuncios
       const cacheKey = 'announcements_recent';
       const cachedAnnouncements = cache.get<Announcement[]>(cacheKey);
       if (cachedAnnouncements) {
+        console.log('Using cached announcements:', cachedAnnouncements); // Debug
         setAnnouncements(cachedAnnouncements);
         setIsLoadingAnnouncements(false);
         return;
       }
-      
+
+      // Verificar si existe la tabla
+      const { data: tableCheck, error: tableError } = await supabase
+        .from('announcements')
+        .select('count')
+        .limit(1);
+
+      console.log('Table check result:', { tableCheck, tableError }); // Debug
+
       const { data: announcementsData, error: announcementsError } = await supabase
         .from('announcements')
         .select(`
@@ -219,22 +236,26 @@ const StudentDashboardContent = () => {
           title,
           content,
           created_at,
-          author:users!announcements_created_by_fkey(name, first_name, last_name)
+          created_by,
+          is_active
         `)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (announcementsError) throw announcementsError;
+      if (announcementsError) {
+        console.error('Error fetching announcements:', announcementsError);
+        throw announcementsError;
+      }
+
+      console.log('Announcements data:', announcementsData); // Debug
 
       const processedAnnouncements = (announcementsData || []).map((ann: any) => ({
         id: ann.id,
         title: ann.title,
         content: ann.content,
         date: ann.created_at,
-        author: ann.author?.name ||
-          `${ann.author?.first_name || ''} ${ann.author?.last_name || ''}`.trim() ||
-          'Admin'
+        author: 'Sistema' // Temporalmente simplificado
       }));
 
       setAnnouncements(processedAnnouncements);
@@ -256,68 +277,138 @@ const StudentDashboardContent = () => {
 
       // Cache para tareas
       const cacheKey = `assignments_${user.id}`;
-      const cachedAssignment = cache.get<Assignment | null>(cacheKey);
-      if (cachedAssignment !== undefined) {
-        setNextAssignment(cachedAssignment);
+      const cachedData = cache.get<{ nextAssignment: Assignment | null; allAssignments: AssignmentWithStatus[] }>(cacheKey);
+      if (cachedData) {
+        setNextAssignment(cachedData.nextAssignment);
+        setAllPendingAssignments(cachedData.allAssignments);
         setIsLoadingAssignments(false);
         return;
       }
       
-      // Obtener IDs de cursos matriculados
+      // 1. Obtener cursos activos donde el estudiante está matriculado
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('course_id')
+        .select(`
+          course_id,
+          course:courses!inner(
+            id,
+            name,
+            course_code,
+            is_active
+          )
+        `)
         .eq('user_id', user.id)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('course.is_active', true);
 
       if (enrollmentsError) throw enrollmentsError;
 
-      const enrolledCourseIds = (enrollmentsData || []).map((enrollment: any) => enrollment.course_id);
+      const activeCourseIds = (enrollmentsData || [])
+        .filter(enrollment => (enrollment.course as any)?.is_active)
+        .map(enrollment => enrollment.course_id);
       
-      if (enrolledCourseIds.length > 0) {
-        const { data: assignmentsData, error: assignmentsError } = await supabase
-          .from('assignments')
-          .select(`
-            id,
-            title,
-            due_date,
-            course_id,
-            course:courses(name, course_code)
-          `)
-          .in('course_id', enrolledCourseIds)
-          .gte('due_date', new Date().toISOString())
-          .eq('is_active', true)
-          .order('due_date', { ascending: true })
-          .limit(1);
-
-        if (!assignmentsError && assignmentsData && assignmentsData.length > 0) {
-          const assignment = assignmentsData[0];
-          const dueDate = new Date(assignment.due_date);
-          const today = new Date();
-          const timeDiff = dueDate.getTime() - today.getTime();
-          const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-          const nextAssignmentData = {
-            id: assignment.id,
-            title: assignment.title,
-            due_date: assignment.due_date,
-            course_id: assignment.course_id,
-            course_name: (assignment.course as any)?.name || 'Curso sin nombre',
-            course_code: (assignment.course as any)?.course_code || '',
-            days_remaining: daysRemaining
-          };
-
-          setNextAssignment(nextAssignmentData);
-          // Cache por 2 minutos
-          cache.set(cacheKey, nextAssignmentData, 2 * 60 * 1000);
-        } else {
-          setNextAssignment(null);
-          cache.set(cacheKey, null, 2 * 60 * 1000);
-        }
+      if (activeCourseIds.length === 0) {
+        setNextAssignment(null);
+        setAllPendingAssignments([]);
+        cache.set(cacheKey, { nextAssignment: null, allAssignments: [] }, 2 * 60 * 1000);
+        return;
       }
+
+      // 2. Obtener todas las asignaciones de los cursos activos
+      const { data: assignmentsData, error: assignmentsError } = await supabase
+        .from('assignments')
+        .select(`
+          id,
+          title,
+          due_date,
+          course_id,
+          max_score,
+          course:courses(name, course_code)
+        `)
+        .in('course_id', activeCourseIds)
+        .order('due_date', { ascending: true });
+
+      if (assignmentsError) throw assignmentsError;
+
+      // 3. Obtener entregas/grades del estudiante para verificar qué ha entregado
+      const assignmentIds = (assignmentsData || []).map(assignment => assignment.id);
+      const { data: gradesData, error: gradesError } = await supabase
+        .from('grades')
+        .select('assignment_id')
+        .eq('student_id', user.id)
+        .in('assignment_id', assignmentIds);
+
+      if (gradesError) throw gradesError;
+
+      const submittedAssignmentIds = new Set((gradesData || []).map(grade => grade.assignment_id));
+
+      // 4. Procesar asignaciones y calcular estado
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
+
+      const processedAssignments: AssignmentWithStatus[] = (assignmentsData || []).map(assignment => {
+        const dueDate = new Date(assignment.due_date);
+        dueDate.setHours(23, 59, 59, 999); // Set to end of day
+        
+        const timeDiff = dueDate.getTime() - today.getTime();
+        const daysRemaining = Math.ceil(timeDiff / (1000 * 3600 * 24));
+        
+        const isSubmitted = submittedAssignmentIds.has(assignment.id);
+        
+        let status: 'pending' | 'due_today' | 'overdue' | 'submitted' = 'pending';
+        if (isSubmitted) {
+          status = 'submitted';
+        } else if (daysRemaining < 0) {
+          status = 'overdue';
+        } else if (daysRemaining === 0) {
+          status = 'due_today';
+        }
+
+        return {
+          id: assignment.id,
+          title: assignment.title,
+          due_date: assignment.due_date,
+          course_id: assignment.course_id,
+          course_name: (assignment.course as any)?.name || 'Curso sin nombre',
+          course_code: (assignment.course as any)?.course_code || '',
+          days_remaining: daysRemaining,
+          is_submitted: isSubmitted,
+          max_score: assignment.max_score || 100,
+          status
+        };
+      });
+
+      // 5. Filtrar asignaciones pendientes (no entregadas)
+      const pendingAssignments = processedAssignments.filter(assignment => !assignment.is_submitted);
+      
+      // 6. Encontrar la próxima asignación (más cercana en el tiempo, no vencida)
+      const upcomingAssignments = pendingAssignments
+        .filter(assignment => assignment.days_remaining >= 0)
+        .sort((a, b) => a.days_remaining - b.days_remaining);
+
+      const nextAssignmentData = upcomingAssignments.length > 0 ? upcomingAssignments[0] : null;
+
+      // 7. Guardar en estado y cache
+      setNextAssignment(nextAssignmentData);
+      setAllPendingAssignments(pendingAssignments.sort((a, b) => a.days_remaining - b.days_remaining));
+      
+      const cacheData = { 
+        nextAssignment: nextAssignmentData, 
+        allAssignments: pendingAssignments.sort((a, b) => a.days_remaining - b.days_remaining)
+      };
+      cache.set(cacheKey, cacheData, 2 * 60 * 1000);
+
+      console.log('Assignments processed:', {
+        totalAssignments: assignmentsData?.length || 0,
+        pendingAssignments: pendingAssignments.length,
+        nextAssignment: nextAssignmentData,
+        allPending: pendingAssignments
+      });
+
     } catch (error) {
       console.error('Error fetching assignments:', error);
       setNextAssignment(null);
+      setAllPendingAssignments([]);
     } finally {
       setIsLoadingAssignments(false);
     }
@@ -521,7 +612,7 @@ const StudentDashboardContent = () => {
                 ) : (
                   nextAssignment 
                     ? nextAssignment.days_remaining > 0 
-                      ? `${nextAssignment.days_remaining} días` 
+                      ? `${nextAssignment.days_remaining} ${nextAssignment.days_remaining === 1 ? 'día' : 'días'}` 
                       : nextAssignment.days_remaining === 0 
                         ? 'Hoy' 
                         : 'Vencido'
@@ -529,9 +620,21 @@ const StudentDashboardContent = () => {
                 )}
               </p>
               {nextAssignment && !isLoadingAssignments && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {nextAssignment.title} - {nextAssignment.course_code ? `${nextAssignment.course_code} - ${nextAssignment.course_name}` : nextAssignment.course_name}
-                </p>
+                <div className="mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    {nextAssignment.title}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {nextAssignment.course_code ? `${nextAssignment.course_code} - ${nextAssignment.course_name}` : nextAssignment.course_name}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Fecha límite: {new Date(nextAssignment.due_date).toLocaleDateString('es-AR', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short'
+                    })}
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -617,7 +720,7 @@ const StudentDashboardContent = () => {
                     </div>
                   </div>
                   <Link
-                    to={`/student/courses/:${course.id}`}
+                    to={`/student/courses/${course.id}`}
                     className="mt-2 inline-block text-sky-600 dark:text-sky-400 hover:underline"
                   >
                     Ver detalles
@@ -641,6 +744,61 @@ const StudentDashboardContent = () => {
           )}
         </div>
       </div>
+
+      {/* Próximas asignaciones (si hay más de una pendiente) */}
+      {!isLoadingAssignments && allPendingAssignments.length > 1 && (
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4 flex items-center">
+            <Clock size={18} className="mr-2 text-amber-600 dark:text-amber-400" />
+            Próximas evaluaciones ({allPendingAssignments.length})
+          </h2>
+          
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden">
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {allPendingAssignments.slice(0, 5).map((assignment) => (
+                <div key={assignment.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
+                        {assignment.title}
+                      </h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        {assignment.course_code ? `${assignment.course_code} - ${assignment.course_name}` : assignment.course_name}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-500">
+                        {new Date(assignment.due_date).toLocaleDateString('es-AR', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        assignment.status === 'due_today' 
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : assignment.status === 'overdue'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : assignment.days_remaining <= 3
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      }`}>
+                        {assignment.days_remaining > 0 
+                          ? `${assignment.days_remaining} ${assignment.days_remaining === 1 ? 'día' : 'días'}`
+                          : assignment.days_remaining === 0 
+                          ? 'Vence hoy'
+                          : `Vencido (${Math.abs(assignment.days_remaining)} ${Math.abs(assignment.days_remaining) === 1 ? 'día' : 'días'})`
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Announcements */}
       <div>

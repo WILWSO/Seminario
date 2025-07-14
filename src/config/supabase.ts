@@ -115,5 +115,33 @@ export interface Announcement {
   content: string;
   created_by: string;
   created_at: string;
+  is_active: boolean;
   author?: User;
 }
+
+// Utilities for handling authentication errors
+export const isAuthError = (error: any): boolean => {
+  return error?.message?.includes('Invalid Refresh Token') ||
+         error?.message?.includes('refresh_token') ||
+         error?.message?.includes('JWT expired') ||
+         error?.status === 401;
+};
+
+export const clearAuthSession = async (): Promise<void> => {
+  try {
+    localStorage.removeItem('user_profile');
+    localStorage.removeItem('supabase.auth.token');
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    console.warn('Error clearing auth session:', error);
+  }
+};
+
+export const handleAuthError = async (error: any): Promise<void> => {
+  if (isAuthError(error)) {
+    console.warn('Authentication error detected, clearing session:', error);
+    await clearAuthSession();
+    // Opcional: redirigir al login
+    window.location.href = '/login';
+  }
+};

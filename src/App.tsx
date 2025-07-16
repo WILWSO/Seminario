@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
+import { useAuthErrorNotifications } from './hooks/useAuthErrorNotifications';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -33,6 +34,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 function ConnectionStatusHandler() {
   const { showError } = useNotifications();
   useConnectionStatus(showError);
+  useAuthErrorNotifications(); // Agregar el hook para manejar errores de autenticación
   return null;
 }
 

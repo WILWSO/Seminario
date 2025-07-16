@@ -239,7 +239,6 @@ const StudentAssignments = () => {
         };
       });
 
-      console.log('Processed assignments:', processedAssignments.length);
       setAssignments(processedAssignments);
 
       // Show success message only if this is a manual refresh

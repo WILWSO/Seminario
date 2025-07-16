@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Filter, BookOpen, UserPlus, Check, Clock, Users, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { courseService, studentService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { supabase } from '../../config/supabase';
@@ -271,19 +270,19 @@ const CoursesList = () => {
               <span className="font-medium">Profesor:</span> {course.professor}
             </p>
             {course.period && (
-              <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
+              <div className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
                 <Calendar size={14} className="mr-1" />
                 <span className="font-medium">Período:</span> {course.period}
-              </p>
+              </div>
             )}
             <p className="text-sm text-slate-600 dark:text-slate-400">
               <span className="font-medium">Créditos:</span> {course.credits}
             </p>
             {course.max_students && (
-              <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
+              <div className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
                 <Users size={14} className="mr-1" />
                 <span className="font-medium">Cupos:</span> {course.current_enrollments}/{course.max_students}
-              </p>
+              </div>
             )}
             {course.enrollment_end_date && course.enrollment_open && (
               <p className="text-sm text-slate-600 dark:text-slate-400">

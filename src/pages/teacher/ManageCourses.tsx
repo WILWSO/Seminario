@@ -50,11 +50,11 @@ const ManageCourses = () => {
     try {
       setIsLoading(true);
 
+      // Primero obtenemos los cursos básicos
       const { data: coursesData, error } = await supabase
         .from('courses')
         .select(`
           *,
-          enrollments(count),
           modules(
             id,
             lessons(id)
@@ -65,13 +65,36 @@ const ManageCourses = () => {
 
       if (error) throw error;
 
-      // Transform data to include counts
-      const transformedCourses = (coursesData || []).map(course => ({
+      if (!coursesData || coursesData.length === 0) {
+        setCourses([]);
+        return;
+      }
+
+      // Obtener conteos de estudiantes matriculados
+      const coursesWithCounts = await Promise.all(
+        coursesData.map(async (course) => {
+          const { data: enrollmentData, error: enrollmentError } = await supabase
+            .from('enrollments')
+            .select('id')
+            .eq('course_id', course.id)
+            .eq('is_active', true);
+
+          return {
+            ...course,
+            students_count: enrollmentError ? 0 : enrollmentData?.length || 0,
+            modules_count: course.modules?.length || 0,
+            lessons_count: course.modules?.reduce((acc: number, module: any) => acc + (module.lessons?.length || 0), 0) || 0
+          };
+        })
+      );
+
+      // Transformamos los datos incluyendo los conteos correctos
+      const transformedCourses = coursesWithCounts.map(course => ({
         id: course.id,
         name: course.name,
         course_code: course.course_code || '',
         description: course.description || '',
-        students_count: course.enrollments?.length || 0,
+        students_count: course.students_count || 0,
         modules_count: course.modules?.length || 0,
         lessons_count: course.modules?.reduce((total: number, module: any) => 
           total + (module.lessons?.length || 0), 0) || 0,
@@ -204,6 +227,7 @@ const ManageCourses = () => {
                         <Users className="h-4 w-4 mr-1" />
                         Ver estudiantes
                       </Link>
+                      
                       <Link
                         to={`/teacher/courses/${course.id}`}
                         className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-medium text-sky-700 bg-sky-100 hover:bg-sky-200 dark:bg-sky-900 dark:text-sky-300 dark:hover:bg-sky-800 transition-colors"

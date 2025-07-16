@@ -117,10 +117,23 @@ const Progress = () => {
       if (enrollmentsError) throw enrollmentsError;
 
       // Buscar lições completadas pelo usuário
+      // Obtener IDs de cursos para filtrar lecciones completadas
+      const enrolledCourseIds = (enrollmentsData || []).map((enrollment: any) => enrollment.course?.id).filter(Boolean);
+      
+      // Buscar lecciones completadas por el usuario SOLO para los cursos matriculados
       const { data: completedLessons, error: completedError } = await supabase
         .from('completed_lessons')
-        .select('lesson_id')
-        .eq('user_id', user?.id);
+        .select(`
+          lesson_id,
+          lessons!inner(
+            id,
+            modules!inner(
+              course_id
+            )
+          )
+        `)
+        .eq('user_id', user?.id)
+        .in('lessons.modules.course_id', enrolledCourseIds);
 
       if (completedError) throw completedError;
 
@@ -173,7 +186,7 @@ const Progress = () => {
         }).length;
 
         const progressPercentage = totalLessons > 0 ? 
-          Math.round((completedLessonsCount / totalLessons) * 100) : 0;
+          Math.min(100, Math.round((completedLessonsCount / totalLessons) * 100)) : 0;
 
         // Filtrar notas específicas do curso
         const courseGrades = (gradesData || [])

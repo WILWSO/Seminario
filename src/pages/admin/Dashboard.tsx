@@ -87,15 +87,17 @@ const AdminDashboard = () => {
         ]);
 
         // Processar atividades recentes
-        const activities = [];
+        const activities: RecentActivity[] = [];
         let activityId = 1;
 
         // Adicionar matrículas recentes
         (recentEnrollments.data || []).forEach(enrollment => {
-          const userName = enrollment.user?.name || 
-                          `${enrollment.user?.first_name || ''} ${enrollment.user?.last_name || ''}`.trim() || 
+          const user = enrollment.user as any;
+          const course = enrollment.course as any;
+          const userName = user?.name || 
+                          `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 
                           'Usuario';
-          const courseName = enrollment.course?.name || 'Curso';
+          const courseName = course?.name || 'Curso';
           
           activities.push({
             id: activityId++,

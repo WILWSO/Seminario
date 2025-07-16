@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit, Trash2, Users, BookOpen, Calendar, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { handleSupabaseError } from '../../services/authErrorHandler';
 
 interface Course {
   id: string;
@@ -42,6 +43,8 @@ const ManageCourses: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, courseId?: string }>({ open: false });
+  const [toggleLoading, setToggleLoading] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     course_code: '',
@@ -60,18 +63,53 @@ const ManageCourses: React.FC = () => {
 
   const fetchCourses = async () => {
     try {
+      // Obtener cursos con join optimizado
       const { data, error } = await supabase
         .from('courses')
         .select(`
           *,
           teacher:users!courses_teacher_id_fkey(name, email),
-          enrollments(count),
           modules(count)
         `)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setCourses(data || []);
+      if (error) {
+        handleSupabaseError(error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        setCourses([]);
+        return;
+      }
+
+      // Obtener conteos de matrículas activas en una sola consulta
+      const { data: enrollmentCounts, error: enrollmentError } = await supabase
+        .from('enrollments')
+        .select('course_id')
+        .eq('is_active', true);
+
+      if (enrollmentError) {
+        handleSupabaseError(enrollmentError);
+        console.error('Error fetching enrollment counts:', enrollmentError);
+      }
+
+      // Contar matrículas por curso
+      const enrollmentCountsMap = enrollmentCounts?.reduce((acc, enrollment) => {
+        acc[enrollment.course_id] = (acc[enrollment.course_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>) || {};
+
+      // Mapear datos con conteos optimizados
+      const coursesWithCounts = data.map(course => ({
+        ...course,
+        _count: {
+          enrollments: enrollmentCountsMap[course.id] || 0,
+          modules: course.modules?.length || 0
+        }
+      }));
+
+      setCourses(coursesWithCounts);
     } catch (error) {
       console.error('Error fetching courses:', error);
     } finally {
@@ -193,17 +231,30 @@ const ManageCourses: React.FC = () => {
 
   const toggleEnrollment = async (courseId: string, currentStatus: boolean) => {
     try {
+      setToggleLoading(courseId);
+      
       const { error } = await supabase
         .from('courses')
         .update({ enrollment_open: !currentStatus })
         .eq('id', courseId);
 
       if (error) throw error;
-      await fetchCourses();
-      showInfo ('Atención!', `Matrícula ${currentStatus ? 'cerrada' : 'abierta'} exitosamente`, 5000);
+      
+      // Actualizar el estado local inmediatamente sin refrescar toda la lista
+      setCourses(prevCourses => 
+        prevCourses.map(course => 
+          course.id === courseId 
+            ? { ...course, enrollment_open: !currentStatus }
+            : course
+        )
+      );
+      
+      showInfo('Atención!', `Matrícula ${currentStatus ? 'cerrada' : 'abierta'} exitosamente`, 5000);
     } catch (error) {
       console.error('Error updating enrollment status:', error);
       showError('Error al actualizar.', 'Por favor, inténtalo de nuevo.', 5000);
+    } finally {
+      setToggleLoading(null);
     }
   };
 
@@ -347,9 +398,13 @@ const ManageCourses: React.FC = () => {
                     </span>
                     <button
                       onClick={() => toggleEnrollment(course.id, course.enrollment_open)}
-                      className="text-xs text-blue-600 hover:text-blue-800"
+                      disabled={toggleLoading === course.id}
+                      className={`text-xs ${toggleLoading === course.id 
+                        ? 'text-gray-400 cursor-not-allowed' 
+                        : 'text-blue-600 hover:text-blue-800'
+                      } transition-colors`}
                     >
-                      Cambiar
+                      {toggleLoading === course.id ? 'Cambiando...' : 'Cambiar'}
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -364,13 +419,13 @@ const ManageCourses: React.FC = () => {
                       onClick={() => setConfirmDialog({ open: true, courseId: course.id })}
                       className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                       title="Eliminar"
-                    // onClick={() => handleDelete(course.id)}
-                    // className="p-1 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
+
+                {/* Course Edit Status Badge */}
               </div>
             </div>
           ))}

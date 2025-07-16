@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase, User } from '../config/supabase';
 import type { Session } from '@supabase/supabase-js';
+import { setAuthErrorHandler, handleSupabaseError } from '../services/authErrorHandler';
+import { emitAuthError } from '../hooks/useAuthErrorNotifications';
 
 interface AuthContextType {
   user: User | null;
@@ -32,12 +34,53 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Função robusta para buscar perfil com timeout
+  // Función utilitaria para limpiar completamente la sesión
+  const clearSession = () => {
+    setUser(null);
+    setSession(null);
+    setError(null);
+    localStorage.removeItem('user_profile');
+    
+    // Limpiar todos los tokens de Supabase del localStorage
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sb-') && key.includes('-auth-token')) {
+        localStorage.removeItem(key);
+      }
+    });
+  };
+
+  // Función para verificar si es un error de token inválido
+  const isInvalidTokenError = (error: any) => {
+    return error?.message?.includes('refresh_token_not_found') || 
+           error?.message?.includes('Invalid Refresh Token') ||
+           error?.message?.includes('refresh_token_expired') ||
+           error?.message?.includes('JWT expired');
+  };
+
+  // Configurar el manejador global de errores de autenticación
+  useEffect(() => {
+    setAuthErrorHandler({
+      onInvalidToken: () => {
+        console.log('Manejador global: Token inválido detectado');
+        emitAuthError('invalid_token', 'Token de sesión inválido o expirado');
+        clearSession();
+      },
+      onNetworkError: () => {
+        console.log('Manejador global: Error de red detectado');
+        emitAuthError('network_error', 'Error de conexión con el servidor');
+        setError('Error de conexión. Verifica tu conexión a internet.');
+      }
+    });
+  }, []);
+
+  // Función robusta para buscar perfil com timeout
   const fetchUserProfile = async (userId: string) => {
     return Promise.race([
       (async () => {
         try {
-          console.log('Fetching user profile for ID:', userId);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Fetching user profile for ID:', userId);
+          }
           const { data, error } = await supabase
             .from('users')
             .select('id, name, first_name, last_name, email, role, profile_photo_url')
@@ -46,6 +89,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
           if (error) {
             console.error('Database error fetching user profile:', error);
+            handleSupabaseError(error);
+            
             if (error.code === 'PGRST116') {
               console.log('User profile not found in database - this is normal for new users');
               return null;
@@ -76,8 +121,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     let isMounted = true;
     setIsLoading(true);
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (!isMounted) return;
+      
+      // Manejo mejorado de errores de token expirado o inválido
+      if (error) {
+        if (isInvalidTokenError(error)) {
+          console.log('Token inválido o expirado, limpiando sesión...');
+          clearSession();
+          setIsLoading(false);
+          return;
+        }
+        
+        // Otros errores de autenticación
+        console.error('Error al obtener sesión:', error);
+        setError('Error de autenticación');
+        setIsLoading(false);
+        return;
+      }
+      
       setSession(session);
 
       if (session?.user) {
@@ -91,17 +153,64 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // 2. Atualiza do servidor em paralelo
         fetchUserProfile(session.user.id).then(profile => {
           if (profile && JSON.stringify(profile) !== JSON.stringify(user)) {
-            setUser(profile);
+            setUser(profile as User);
             localStorage.setItem('user_profile', JSON.stringify(profile));
           }
           setIsLoading(false);
         }).catch(() => setIsLoading(false));
       } else {
+        setUser(null);
+        localStorage.removeItem('user_profile');
         setIsLoading(false);
       }
     });
 
-    return () => { isMounted = false; };
+    // Listener para mudanças de auth com manejo de erros mejorado
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.id);
+        
+        // Manejar errores específicos de refresh token
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          console.log('Token refresh falló, limpiando sesión...');
+          clearSession();
+          return;
+        }
+        
+        if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setSession(null);
+            localStorage.removeItem('user_profile');
+          }
+        }
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          setSession(session);
+          if (session?.user) {
+            try {
+              const profile = await fetchUserProfile(session.user.id);
+              setUser(profile as User);
+              if (profile) {
+                localStorage.setItem('user_profile', JSON.stringify(profile));
+              }
+            } catch (error: any) {
+              console.log('Error loading profile after auth change:', error);
+              
+              // Si hay error de autenticación, limpiar sesión
+              if (isInvalidTokenError(error)) {
+                clearSession();
+              }
+            }
+          }
+        }
+      }
+    );
+
+    return () => { 
+      isMounted = false; 
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -116,7 +225,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       if (data.user) {
         setSession(data.session); // <-- Certifique-se que está atualizando a sessão!
         const profile = await fetchUserProfile(data.user.id);
-        setUser(profile);
+        setUser(profile as User);
         if (!profile) setError('Perfil não encontrado.');
       }
     } catch (err: any) {
@@ -132,12 +241,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      setUser(null);
-      setSession(null);
-      setError(null);
+      clearSession();
     } catch (err: any) {
-      setError(err.message);
       console.error('Logout error:', err);
+      // Incluso si hay error, limpiar la sesión local
+      clearSession();
       throw err;
     } finally {
       setIsLoading(false);
@@ -154,7 +262,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     isAuthenticated: !!session && !!user
   };
 
-  console.log('AuthContext:', { user, session, isLoading, error });
+  // Solo mostrar logs en desarrollo
+  if (process.env.NODE_ENV === 'development') {
+    console.log('AuthContext:', { user: user?.id, session: !!session, isLoading, error });
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

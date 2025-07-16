@@ -68,6 +68,8 @@ const StudentDashboard = () => {
   }, [user?.id]);
 
   const fetchCourses = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingCourses(true);
       
@@ -87,7 +89,7 @@ const StudentDashboard = () => {
             teacher:users!courses_teacher_id_fkey(name, first_name, last_name)
           )
         `)
-        .eq('user_id', user.id)
+        .eq('user_id', user?.id)
         .eq('is_active', true)
         .limit(20); // Limitar resultados
 
@@ -107,11 +109,20 @@ const StudentDashboard = () => {
         return;
       }
 
-      // Buscar lecciones completadas por el usuario
+      // Buscar lecciones completadas por el usuario SOLO para los cursos matriculados
       const { data: completedLessons, error: completedError } = await supabase
         .from('completed_lessons')
-        .select('lesson_id')
-        .eq('user_id', user.id);
+        .select(`
+          lesson_id,
+          lessons!inner(
+            id,
+            modules!inner(
+              course_id
+            )
+          )
+        `)
+        .eq('user_id', user?.id)
+        .in('lessons.modules.course_id', courseIds);
 
       if (completedError) throw completedError;
 
@@ -147,7 +158,19 @@ const StudentDashboard = () => {
           completedLessonIds.has(lesson.id)
         ).length;
 
-        const progress = totalLessons > 0 ? Math.round((completedLessonsCount / totalLessons) * 100) : 0;
+        const progress = totalLessons > 0 ? Math.min(100, Math.round((completedLessonsCount / totalLessons) * 100)) : 0;
+
+        // Debug log para identificar el problema de progreso > 100%
+        if (completedLessonsCount > totalLessons || Math.round((completedLessonsCount / totalLessons) * 100) > 100) {
+          console.warn('⚠️ Progreso anómalo detectado en Dashboard:', {
+            courseName: course.name,
+            totalLessons,
+            completedLessonsCount,
+            rawPercentage: Math.round((completedLessonsCount / totalLessons) * 100),
+            correctedPercentage: progress,
+            completedLessonIds: Array.from(completedLessonIds).length
+          });
+        }
 
         return {
           id: course.id,
@@ -173,6 +196,8 @@ const StudentDashboard = () => {
   };
 
   const fetchAnnouncements = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingAnnouncements(true);
       
@@ -209,6 +234,8 @@ const StudentDashboard = () => {
   };
 
   const fetchAssignments = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingAssignments(true);
       
@@ -216,7 +243,7 @@ const StudentDashboard = () => {
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
         .select('course_id')
-        .eq('user_id', user.id)
+        .eq('user_id', user?.id)
         .eq('is_active', true);
 
       if (enrollmentsError) throw enrollmentsError;
@@ -266,6 +293,8 @@ const StudentDashboard = () => {
   };
 
   const fetchWithdrawals = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingWithdrawals(true);
       
@@ -277,7 +306,7 @@ const StudentDashboard = () => {
           observations,
           course:courses(name)
         `)
-        .eq('user_id', user.id)
+        .eq('user_id', user?.id)
         .eq('status', 'Desistido')
         .order('completion_date', { ascending: false })
         .limit(3);
@@ -443,7 +472,7 @@ const StudentDashboard = () => {
               <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">
                 Próximo examen
               </h3>
-              <p className="text-2xl font-semibold text-slate-800 dark:text-white">
+              <div className="text-2xl font-semibold text-slate-800 dark:text-white">
                 {isLoadingAssignments ? (
                   <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-16 animate-pulse"></div>
                 ) : (
@@ -455,7 +484,7 @@ const StudentDashboard = () => {
                         : 'Vencido'
                     : 'Sin exámenes'
                 )}
-              </p>
+              </div>
               {nextAssignment && !isLoadingAssignments && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {nextAssignment.title} - {nextAssignment.course_code ? `${nextAssignment.course_code} - ${nextAssignment.course_name}` : nextAssignment.course_name}
@@ -469,26 +498,38 @@ const StudentDashboard = () => {
       {/* Filtro por período */}
       {periods.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Filtrar por período
-              </label>
-              <select
-                title='Filtrar por período'
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="all">Todos los períodos</option>
-                {periods.map(period => (
-                  <option key={period} value={period}>
-                    {period}
-                  </option>
-                ))}
-              </select>
+          <form onSubmit={(e) => e.preventDefault()} role="search">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <label 
+                  htmlFor="period-filter" 
+                  className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                >
+                  Filtrar por período
+                </label>
+                <select
+                  id="period-filter"
+                  name="period-filter"
+                  aria-label="Filtrar cursos por período académico"
+                  aria-describedby="period-help"
+                  autoComplete="off"
+                  value={selectedPeriod}
+                  onChange={(e) => setSelectedPeriod(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500 dark:bg-slate-700 dark:text-white"
+                >
+                  <option value="all">Todos los períodos</option>
+                  {periods.map(period => (
+                    <option key={period} value={period}>
+                      {period}
+                    </option>
+                  ))}
+                </select>
+                <div id="period-help" className="sr-only">
+                  Utiliza este filtro para mostrar solo los cursos de un período académico específico
+                </div>
+              </div>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -516,19 +557,19 @@ const StudentDashboard = () => {
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
                     {course.course_code ? `${course.course_code} - ${course.name}` : course.name}
                   </h3>
-                  <p className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
+                  <div className="text-slate-600 dark:text-slate-400 mb-4 line-clamp-2">
                     {course.description}
-                  </p>
+                  </div>
                   
                   <div className="mb-4 space-y-1">
                     <p className="text-sm text-slate-600 dark:text-slate-400">
                       <span className="font-medium">Profesor:</span> {course.teacher_name}
                     </p>
                     {course.period && (
-                      <p className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
+                      <div className="text-sm text-slate-600 dark:text-slate-400 flex items-center">
                         <Calendar size={14} className="mr-1" />
                         <span className="font-medium">Período:</span> {course.period}
-                      </p>
+                      </div>
                     )}                     
                   </div>
                   
@@ -591,9 +632,9 @@ const StudentDashboard = () => {
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-1">
                       {announcement.title}
                     </h3>
-                    <p className="text-slate-600 dark:text-slate-400 mb-2">
+                    <div className="text-slate-600 dark:text-slate-400 mb-2">
                       {announcement.content}
-                    </p>
+                    </div>
                     <p className="text-sm text-slate-500 dark:text-slate-500">
                       {new Date(announcement.date).toLocaleDateString('es-AR', {
                         year: 'numeric',
@@ -636,9 +677,9 @@ const StudentDashboard = () => {
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-1">
                       {withdrawal.course?.name}
                     </h3>
-                    <p className="text-slate-600 dark:text-slate-400 mb-2">
+                    <div className="text-slate-600 dark:text-slate-400 mb-2">
                       {withdrawal.observations}
-                    </p>
+                    </div>
                     <p className="text-sm text-slate-500 dark:text-slate-500">
                       {new Date(withdrawal.completion_date).toLocaleDateString('es-AR', {
                         year: 'numeric',

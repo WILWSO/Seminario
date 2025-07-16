@@ -64,6 +64,7 @@ const CourseDetails = () => {
   const [activeModule, setActiveModule] = useState<string | null>(null);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [markingLessonsAsComplete, setMarkingLessonsAsComplete] = useState<Set<string>>(new Set());
   
   // Estados de carga separados
   const [isLoadingCourse, setIsLoadingCourse] = useState(true);
@@ -82,7 +83,19 @@ const CourseDetails = () => {
     if (!course) return 0;
     const totalLessons = course.modules.reduce((acc, module) => acc + module.lessons.length, 0);
     if (totalLessons === 0) return 0;
-    return Math.round((completedLessons.size / totalLessons) * 100);
+    
+    const progressPercentage = Math.round((completedLessons.size / totalLessons) * 100);
+    
+    // Debug log para verificar el cálculo correcto
+    console.log('📊 Progreso calculado:', {
+      courseName: course.name,
+      totalLessons,
+      completedLessons: completedLessons.size,
+      completedLessonIds: Array.from(completedLessons),
+      progressPercentage
+    });
+    
+    return Math.min(100, progressPercentage);
   }, [course, completedLessons]);
 
   const firstIncompleteLesson = useMemo(() => {
@@ -135,7 +148,7 @@ const CourseDetails = () => {
 
       const courseBasic = {
         ...courseData,
-        teacher_name: courseData.users?.name || 'Profesor desconocido'
+        teacher_name: (courseData.users as any)?.name || 'Profesor desconocido'
       };
 
       // Guardar en caché (2 minutos)
@@ -170,10 +183,20 @@ const CourseDetails = () => {
         return;
       }
       
+      // Obtener solo las lecciones completadas de este curso específico
       const { data, error } = await supabase
         .from('completed_lessons')
-        .select('lesson_id')
-        .eq('user_id', user.id);
+        .select(`
+          lesson_id,
+          lessons!inner(
+            id,
+            modules!inner(
+              course_id
+            )
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('lessons.modules.course_id', courseId);
 
       if (error) throw error;
 
@@ -185,6 +208,8 @@ const CourseDetails = () => {
       setCompletedLessons(new Set(lessonIds));
     } catch (error) {
       console.error('Error fetching user progress:', error);
+      // En caso de error, inicializar con set vacío
+      setCompletedLessons(new Set());
     } finally {
       setIsLoadingProgress(false);
     }
@@ -373,7 +398,17 @@ const CourseDetails = () => {
   }, [activeModule, loadedModules, fetchModuleContents]);
 
   const markLessonComplete = useCallback(async (lessonId: string) => {
+    // Prevenir múltiples clics
+    if (markingLessonsAsComplete.has(lessonId)) {
+      return;
+    }
+
     try {
+      setMarkingLessonsAsComplete(prev => new Set([...prev, lessonId]));
+      
+      // Marcar inmediatamente como completada en el estado local para cambiar el botón
+      setCompletedLessons(prev => new Set([...prev, lessonId]));
+
       const { error } = await supabase
         .from('completed_lessons')
         .upsert({
@@ -383,8 +418,6 @@ const CourseDetails = () => {
         });
 
       if (error) throw error;
-
-      setCompletedLessons(prev => new Set([...prev, lessonId]));
       
       // Limpiar caché de progreso
       courseCache.clear(`progress-${user?.id}-${courseId}`);
@@ -392,9 +425,21 @@ const CourseDetails = () => {
       showSuccess('Lección marcada como completada', 'success');
     } catch (error) {
       console.error('Error marking lesson as complete:', error);
+      // Revertir el estado local si hubo error
+      setCompletedLessons(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(lessonId);
+        return newSet;
+      });
       showError('Error al marcar la lección como completada', 'error');
+    } finally {
+      setMarkingLessonsAsComplete(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(lessonId);
+        return newSet;
+      });
     }
-  }, [user?.id, courseId, showSuccess, showError]);
+  }, [user?.id, courseId, showSuccess, showError, markingLessonsAsComplete]);
 
   const handleContentClick = useCallback((content: LessonContent) => {
     if (content.content_url) {
@@ -824,9 +869,17 @@ const CourseDetails = () => {
                                     {!completedLessons.has(lesson.id) && (
                                       <button
                                         onClick={() => markLessonComplete(lesson.id)}
-                                        className="px-3 py-1 text-xs bg-sky-600 text-white rounded hover:bg-sky-700 transition"
+                                        disabled={markingLessonsAsComplete.has(lesson.id)}
+                                        className={`px-3 py-1 text-xs text-white rounded transition ${
+                                          markingLessonsAsComplete.has(lesson.id)
+                                            ? 'bg-gray-400 cursor-not-allowed'
+                                            : 'bg-sky-600 hover:bg-sky-700'
+                                        }`}
                                       >
-                                        Marcar como completada
+                                        {markingLessonsAsComplete.has(lesson.id) 
+                                          ? 'Procesando...' 
+                                          : 'Marcar como completada'
+                                        }
                                       </button>
                                     )}
                                   </div>

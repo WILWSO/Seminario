@@ -88,8 +88,6 @@ const Grades = () => {
 
       if (error) throw error;
 
-      console.log('📚 Enrollments data:', data);
-
       // Buscar información dos professores separadamente
       const teacherIds = (data || []).map(enrollment => (enrollment as any).courses.teacher_id);
 
@@ -121,10 +119,8 @@ const Grades = () => {
       });
 
       setCourses(coursesData);
-      console.log('📋 Processed courses:', coursesData);
       if (coursesData.length > 0) {
         setSelectedCourse('all'); // Establecer "Todos los cursos" como predeterminado
-        console.log('🎯 Selected all courses');
       }
     } catch (error) {
       console.error('Error fetching courses:', error);
@@ -224,7 +220,6 @@ const Grades = () => {
         };
       });
 
-      console.log('✅ All processed grades:', processedGrades);
       setGrades(processedGrades);
     } catch (error) {
       console.error('Error fetching all grades:', error);
@@ -312,17 +307,12 @@ const Grades = () => {
 
       if (assignmentsError) throw assignmentsError;
 
-      console.log('📝 Assignments for course:', selectedCourse, assignmentsData);
-
       const assignmentIds = (assignmentsData || []).map(a => a.id);
 
       if (assignmentIds.length === 0) {
-        console.log('⚠️ No assignments found for course');
         setGrades([]);
         return;
       }
-
-      console.log('🔍 Looking for submissions with assignment IDs:', assignmentIds);
 
       // Buscar las calificaciones del estudiante en assignment_submissions
       const { data: gradesData, error: gradesError } = await supabase
@@ -334,8 +324,6 @@ const Grades = () => {
         .order('graded_at', { ascending: false });
 
       if (gradesError) throw gradesError;
-
-      console.log('📊 Grades data found:', gradesData);
 
       // Buscar información del curso
       const { data: courseData, error: courseError } = await supabase
@@ -374,7 +362,6 @@ const Grades = () => {
         };
       });
 
-      console.log('✅ Processed grades:', processedGrades);
       setGrades(processedGrades);
     } catch (error) {
       console.error('Error fetching grades:', error);

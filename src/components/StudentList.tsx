@@ -248,14 +248,14 @@ export default function StudentList({ courseId }: StudentListProps) {
                         {getStudentDisplayName(student)}
                       </p>
                       <div className="flex items-center space-x-4 mt-1">
-                        <p className="text-sm text-gray-500 flex items-center">
+                        <div className="text-sm text-gray-500 flex items-center">
                           <Mail className="w-4 h-4 mr-1" />
                           {student.user?.email || 'Email no disponible'}
-                        </p>
-                        <p className="text-sm text-gray-500 flex items-center">
+                        </div>
+                        <div className="text-sm text-gray-500 flex items-center">
                           <Calendar className="w-4 h-4 mr-1" />
                           Matriculado: {new Date(student.enrollment_date).toLocaleDateString()}
-                        </p>
+                        </div>
                       </div>
                     </div>
                   </div>

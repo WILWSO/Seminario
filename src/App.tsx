@@ -30,6 +30,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { useNotifications } from './contexts/NotificationContext';
 import { useConnectionStatus } from './hooks/useConnectionStatus';
 import { NotificationProvider } from './contexts/NotificationContext';
+import ManageFinalGrade from './pages/admin/ManageFinalGrade';
 
 function ConnectionStatusHandler() {
   const { showError } = useNotifications();
@@ -100,6 +101,7 @@ function App() {
                 <Route path="announcements/create" element={<ManageAnnouncements />} />
                 <Route path="users" element={<ManageUsers />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="managefinalgrade" element={<ManageFinalGrade />} />              
               </Route>
 
               {/* 404 Route */}

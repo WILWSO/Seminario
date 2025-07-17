@@ -68,10 +68,10 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
   const navItems = {
     student: [
       { path: '/student/dashboard', icon: <Home size={20} />, label: 'Inicio' },
-      { path: '/student/courses', icon: <BookOpen size={20} />, label: 'Cursos' },
+      { path: '/student/courses', icon: <BookOpen size={20} />, label: 'Mis Cursos' },
       { path: '/student/assignments', icon: <FileText size={20} />, label: 'Mis Evaluaciones' },
       { path: '/student/progress', icon: <BarChart size={20} />, label: 'Mi Progreso' },
-      { path: '/student/grades', icon: <GraduationCap size={20} />, label: 'Mis Notas' },
+      { path: '/student/grades', icon: <GraduationCap size={20} />, label: 'Mis Calificaciones' },
     ],
     teacher: [
       { path: '/teacher/dashboard', icon: <Home size={20} />, label: 'Inicio' },
@@ -84,6 +84,7 @@ const Sidebar = ({ isOpen, toggleSidebar, isMobile }: SidebarProps) => {
       { path: '/admin/courses', icon: <BookOpen size={20} />, label: 'Cursos' },
       { path: '/admin/users', icon: <Users size={20} />, label: 'Usuarios' },
       { path: '/admin/announcements', icon: <Bell size={20} />, label: 'Anuncios' },
+      { path: '/admin/managefinalgrade', icon: <GraduationCap size={20} />, label: 'Secretaría' },
       { path: '/admin/settings', icon: <Settings size={20} />, label: 'Configuración' },
     ],
   };
